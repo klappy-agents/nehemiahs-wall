@@ -1,0 +1,32 @@
+# Security note — scaffold (local, 2026-11-21)
+
+These are pre-hosting fixes for the three gaps named in `GATE-RECEIPTS.md`. They are engineering bounds, not product decisions. D1–D10 stay open.
+
+## 1. Auth fails closed
+- **Modes:** `AUTH_MODE=key` is the default and is set explicitly in `wrangler.jsonc` for production, dev and staging.
+- **Protected routes:** `/v1/docs`, `/v1/execute`, `/v1/telemetry` and `/mcp` all require `Authorization: Bearer <key>`. A missing key, a wrong key or a missing configured key returns **401**. Only `/health` is public.
+- **Keys:** keys are Worker secrets set per environment and are never in config or the repo. `MCP_KEY` grants the Watchman seat. `BUILDER_KEY` grants the Builder seat.
+- **Open mode:** `AUTH_MODE=open` is an explicit no-key local mode. It is honoured **only** when `ENVIRONMENT=local`, through an untracked `.dev.vars` (see `.dev.vars.example`) or `wrangler dev --var`. In any other environment it is refused with 401.
+
+## 2. Builder and Watchman powers are separate
+- **The rule lives in core** (`src/core/game.js`): `ROLE_ACTIONS`, `granted`, `view` and `act`.
+- **Which seat a caller holds:** a caller holds only the seat(s) its key grants. Asking for another seat's look, join or act returns `seat_not_granted`. So a Watchman key can never receive the Builder slice, which carries the grid.
+- **Cross-role actions:** an action belonging to the other role (for example Watchman `drop`, Builder `trumpet`) returns `cross_role_action`, even under the local open-mode grant.
+- **Where it's checked:** at the edge (`tools.js`) and again in core.
+- **Action names:** these come from `docs/SPEC.md`. Only `join` and `noop` are implemented; the rules for the rest arrive in M2.
+
+## 3. Rooms and storage are bounded
+| Bound | Value | Why |
+| --- | --- | --- |
+| Rooms per environment | **200** (hard ceiling; `MAX_ROOMS` may only lower it) | v1 is a private playtest with one Builder and one Watchman per room. 200 leaves wide headroom for the persona harness matrix (15 runs) plus repeats, while capping storage and abuse. New rooms past the cap return `room_cap_reached` and are not created |
+| State per room | **64 KiB** serialized | A full room (14×10 grid plus a log capped at 200 entries) measures ~20–30 KB. Writes over the bound return `state_too_large` and are not stored |
+| Request body | **8 KiB** | An execute call is under 1 KB. Larger bodies return 413 before any room call, `/mcp` included |
+| Room id | 16–64 chars, `[A-Za-z0-9_-]` | The client mints 22-char base64url ids from 16 random bytes |
+
+- **What creates a room:** only a `join` creates one; a `look` on an unknown room returns `room_not_found`.
+- **How the cap is counted:** by the `RoomRegistry` Durable Object, one per environment and single-threaded, so the check and the insert are atomic.
+
+## Still open
+- **The browser shell can't play under key mode yet.** `public/app.js` calls `/v1/execute` without a key, and how the Builder credential reaches the browser is D10, a captain decision. Under key mode the browser gets 401 until D10 is decided.
+- **Seat binding:** there is no binding of a seat to one holder. Anyone holding the Watchman key can be the Watchman in any room they know the id of.
+- **Unbuilt pieces:** no room retention or expiry, no freeing of registry slots, no rate limiting, and no key rotation runbook.

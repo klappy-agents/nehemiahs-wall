@@ -1,0 +1,4 @@
+# Local-only. Copy to .dev.vars (untracked) to run `wrangler dev` without keys.
+# Honoured only when ENVIRONMENT=local; any other environment refuses AUTH_MODE=open (docs/SECURITY.md).
+ENVIRONMENT=local
+AUTH_MODE=open

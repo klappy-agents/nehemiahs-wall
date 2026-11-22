@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nehemiah's Wall</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="page">
+  <header class="bar"><h1>Nehemiah's Wall</h1><p class="verse">“So we built the wall… for the people had a mind to work.” <cite>Neh 4:6</cite></p></header>
+  <section class="panel" id="lobby">
+    <p id="room-line">No room yet.</p>
+    <ul class="seats"><li>Builder: <b id="seat-builder">open</b></li><li>Watchman: <b id="seat-watchman">open</b></li></ul>
+    <button id="begin" class="primary">Begin the work</button>
+    <button id="copy" class="quiet" hidden>Copy room link</button>
+  </section>
+  <section class="panel" id="board" hidden>
+    <div id="field" aria-label="The wall"></div>
+    <p class="note">The falling stones arrive in the next build. Every finished course is saved.</p>
+  </section>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

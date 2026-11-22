@@ -1,0 +1,17 @@
+# Dependencies and build output
+node_modules/
+dist/
+# Wrangler local state (Miniflare DO storage, caches)
+.wrangler/
+# Local-only env and secrets: never commit (see docs/SECURITY.md)
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+*.pem
+*.key
+# Logs and OS noise
+*.log
+npm-debug.log*
+.DS_Store
