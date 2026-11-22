@@ -89,7 +89,8 @@ test("first play: the board renders the falling stone; taps send move/rotate/dro
   assert.equal(b.els.field.children.filter((c) => /falling/.test(c.className)).length, 4);
   assert.equal(b.els.field.children.filter((c) => /landing/.test(c.className)).length, 4);
   assert.match(b.els.next.textContent, /long stone · Watchman's pick/);
-  assert.match(b.els.cue.textContent, /left/);
+  assert.match(b.els.raid.textContent, /Raid coming from the left/);
+  assert.equal(b.els.raid.hidden, false);
   const before = b.calls.length;
   const gap = () => new Promise((r) => setTimeout(r, 560));
   await gap();
@@ -142,27 +143,29 @@ async function finishRound(endOn) {
   // Mash Drop: the first tap goes out at once and ends the round; the rest were queued for that round.
   for (let i = 0; i < 8; i++) b.els.drop._click();
   await settle();
-  for (let i = 0; i < 4 && b.els.restart.hidden; i++) await tick(); // a look shows the finished round
+  for (let i = 0; i < 4 && b.els.end.hidden; i++) await tick(); // a look shows the finished round
   return { b, server, tick };
 }
 for (const [endOn, status] of [["win-drop", "won"], ["gravity-loss", "lost"]]) {
-  test(`Try again after a ${status === "won" ? "WIN" : "LOSS"} reaches the server even after mashed taps (no frozen board)`, async () => {
+  const control = status === "won" ? "next-round" : "restart";
+  test(`${status === "won" ? "Next round after a WIN" : "Try again after a LOSS"} reaches the server even after mashed taps (no frozen board)`, async () => {
     const { b, server, tick } = await finishRound(endOn);
-    assert.equal(b.els.restart.hidden, false, "Try again is shown");
+    assert.equal(b.els[control].hidden, false, `${control} is shown`);
     assert.equal(server.s.status, status);
     const stale = server.s.acts.length;
     b.keys.down({ key: " ", preventDefault() {} }); // keyboard taps after the round ended
     b.keys.down({ key: "ArrowLeft", preventDefault() {} });
-    b.els.restart._click();
-    assert.equal(b.els.restart.disabled, true, "one restart per finished round");
+    b.els[control]._click();
+    assert.equal(b.els[control].disabled, true, "one restart per finished round");
     await tick();
     assert.deepEqual(server.s.acts.slice(stale), ["restart"], "restart is the very next act; stale stone taps never went out");
     assert.equal(server.s.round, 2);
-    assert.equal(b.els.restart.hidden, true, "board is live again");
+    assert.equal(b.els[control].hidden, true, "board is live again");
+    assert.equal(b.els.end.hidden, true);
     assert.match(b.els.status.textContent, /Build two courses/);
     assert.equal(b.els.drop.disabled, false);
     // A second press (double tap) after the round restarted sends nothing.
-    b.els.restart._click();
+    b.els[control]._click();
     await tick();
     assert.deepEqual(server.s.acts.slice(stale), ["restart"]);
   });
@@ -181,12 +184,12 @@ test("a rate-limited Try again is kept and goes out after the wait", async () =>
   await settle();
   assert.equal(server.s.status, "won");
   limitNext = true;
-  b.els.restart._click();
+  b.els["next-round"]._click();
   await tick();
   assert.equal(server.s.round, 1, "limited: nothing happened yet");
   await tick(2500);
   assert.equal(server.s.round, 2, "the kept restart went out after retryAfter");
-  assert.equal(b.els.restart.hidden, true);
+  assert.equal(b.els["next-round"].hidden, true);
 });
 
 test("a call that never answers is cut off, so the board cannot stay busy forever", async () => {
@@ -215,4 +218,108 @@ test("a call that never answers is cut off, so the board cannot stay busy foreve
   b.els.drop._click();
   await tick();
   assert.equal(server.s.status, "won", "the next tap went out: not stuck busy");
+});
+
+// ── Fish Gate UX pass (kitchen rail 2026-11-21-nehemiahs-wall-fish-gate-ux-pass) ──
+const HTML = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+async function showing(views, clock = { now: 1_000_000 }) {
+  let i = 0;
+  const current = () => views[Math.min(i, views.length - 1)];
+  const b = boot(`https://nw.test/r/${ROOM}#cap=${TOKEN}`, { respond: (body) => (body.op === "act" ? { ok: true, view: current() } : current()), clock });
+  await settle();
+  const next = async (ms = 1600) => { i++; clock.now += ms; b.pump(); await settle(); };
+  return { b, next, clock };
+}
+
+test("a WIN reads as a win: doors-hung label and Next round, never Try again", async () => {
+  const { b } = await showing([viewOf("won")]);
+  assert.match(b.els.status.textContent, /You won!.*Fish Gate doors are hung/);
+  assert.equal(b.els.end.hidden, false);
+  assert.equal(b.els["next-round"].hidden, false, "progress control shown");
+  assert.equal(b.els.restart.hidden, true, "no Try again after a win");
+  assert.match(b.els["end-cause"].textContent, /Next round/);
+  assert.match(HTML, /id="next-round"[^>]*>Next round</);
+  assert.equal(b.els.drop.disabled, true);
+});
+
+test("a LOSS reads as a loss with one cause line and Try again", async () => {
+  const { b } = await showing([viewOf("lost")]);
+  assert.equal(b.els.status.textContent, "Round lost");
+  assert.equal(b.els["end-cause"].textContent, "Why it stopped: The stones reached the top.");
+  assert.equal(b.els.restart.hidden, false);
+  assert.equal(b.els["next-round"].hidden, true);
+  assert.match(HTML, /id="restart"[^>]*>Try again</);
+});
+
+const building = (extra = {}) => ({ ...viewOf("building"), cue: [{ side: "left" }], ...extra });
+test("a coming raid is named with its side and roughly how soon, for the whole warning window", async () => {
+  const begun = (ago) => ({ text: "The work begins at the Fish Gate", at: 0, ago });
+  const { b, next } = await showing([building({ effects: [begun(10)] }), building({ effects: [begun(26)] }), building({ effects: [begun(30)] })]);
+  assert.equal(b.els.raid.hidden, false);
+  assert.match(b.els.raid.textContent, /^Raid coming from the left, lands in about 20 s\./);
+  assert.match(b.els.raid.textContent, /trumpet|guard/);
+  await next();
+  assert.match(b.els.raid.textContent, /about 4 s/);
+  await next();
+  assert.match(b.els.raid.textContent, /any moment now/);
+});
+
+test("after the trumpet the raid notice names the gate and says it will be turned back; a landed raid says what it did", async () => {
+  const trumpet = { text: "Trumpet sounds at the Old Gate", at: 4000, ago: 1, side: "left", gate: "Old" };
+  const landed = { ...viewOf("building"), cue: [], effects: [{ text: "Raid: +1 row of rubble", at: 30000, ago: 1, side: "left", gate: "Old", row: 13 }] };
+  const { b, next } = await showing([building({ effects: [{ text: "The work begins at the Fish Gate", at: 0, ago: 5 }, trumpet] }), landed]);
+  assert.match(b.els.raid.textContent, /Raid coming from the left at the Old Gate.*turned back/);
+  await next();
+  assert.match(b.els.raid.textContent, /raid hit from the left: a row of rubble/);
+});
+
+test("joined mid-round without the round's first line: the raid notice does not invent a time", async () => {
+  const { b } = await showing([building({ effects: [] })]);
+  assert.match(b.els.raid.textContent, /Raid coming from the left, landing soon/);
+  assert.doesNotMatch(b.els.raid.textContent, /about \d+ s/);
+});
+
+// Watchman effects come from the real rules core, so a copy change there fails here (lens k0002).
+import { newRoom, apply, step as coreStep, slice } from "../src/core/game.js";
+function coreViews(type) {
+  const W = { roles: ["watchman"] };
+  let s = newRoom({ id: "fish", seed: 7, now: 0 });
+  s = apply(s, { seat: "watchman", type: "join" }, 1000).state;
+  s = apply(s, { seat: "builder", type: "join" }, 1000).state;
+  const before = slice(s, "builder");
+  const arg = { trumpet: s.threats[0].id, guard: 4, set_next: s.queue[1].id }[type];
+  const r = coreStep(s, { seat: "watchman", type, arg, requestId: `w-${type}` }, W, 3000);
+  assert.ok(r.ok, `${type}: ${r.error}`);
+  return [before, slice(r.state, "builder")];
+}
+for (const [type, label, words] of [["trumpet", "Trumpet", /Trumpet sounds at the Old Gate/], ["guard", "Guard", /guard is posted at column 5/], ["set_next", "Next stone", /sends the \w+ stone next/]]) {
+  test(`a Watchman ${label} act (${type}) shows a notice naming the act for at least 4 s, and joins the calls log`, async () => {
+    const [before, after] = coreViews(type);
+    const clock = { now: 1_000_000 };
+    let v = before;
+    const b = boot(`https://nw.test/r/${ROOM}#cap=${TOKEN}`, { respond: (body) => (body.op === "act" ? { ok: true, view: v } : v), clock });
+    await settle();
+    assert.equal(b.els["watch-act"].hidden, true, "no act yet");
+    assert.equal(b.els["calls-empty"].hidden, false);
+    v = after; clock.now += 1600; b.pump(); await settle();
+    assert.equal(b.els["watch-act"].hidden, false);
+    assert.match(b.els["watch-act"].textContent, new RegExp(`^Watchman just acted · ${label}\\.`));
+    assert.match(b.els["watch-act"].textContent, words);
+    clock.now += 4200; b.pump(); await settle();
+    assert.equal(b.els["watch-act"].hidden, false, "still up after 4 s");
+    clock.now += 2500; b.pump(); await settle();
+    assert.equal(b.els["watch-act"].hidden, true, "then it clears; the log keeps it");
+    assert.equal(b.els.calls.children.length, 1);
+    assert.match(b.els.calls.children[0].textContent, new RegExp(`^0:02 · ${label}:`));
+    assert.equal(b.els["calls-empty"].hidden, true);
+  });
+}
+
+test("first-time guidance on the board: the goal, the controls and the Watchman's role", () => {
+  const howto = HTML.slice(HTML.indexOf('<details id="howto"'), HTML.indexOf("</details>"));
+  assert.match(howto, /<details id="howto"[^>]* open>/);
+  assert.match(howto, /Two courses hang the Fish Gate doors/);
+  assert.match(howto, /move.*Rotate.*Drop/s);
+  assert.match(howto, /Watchman<\/b> is your teammate.*see raids coming but not your grid/s);
+  assert.doesNotMatch(HTML, /set_next|\brev\b/, "no system words on screen");
 });
