@@ -5,7 +5,7 @@ A real-time, Tetris-style co-op Bible game: you build 🛠️, your AI watchman 
 🌐 browser + 🔌 MCP · ☁️ Cloudflare Workers + Durable Objects
 
 - Spec: [docs/SPEC.md](docs/SPEC.md) · Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Ticket: [klappy/kitchen rail ticket](https://github.com/klappy/kitchen/blob/main/rail/1-ordered/2026-11-21-nehemiahs-wall-coop-game/TICKET.md)
+- Ticket: [klappy/kitchen rail ticket](https://github.com/klappy/kitchen/blob/main/rail/2-cooking/2026-11-21-nehemiahs-wall-coop-game/TICKET.md)
 
 - Security: [docs/SECURITY.md](docs/SECURITY.md) (auth fails closed, role capabilities, room bounds) · Receipts: [docs/GATE-RECEIPTS.md](docs/GATE-RECEIPTS.md)
 
