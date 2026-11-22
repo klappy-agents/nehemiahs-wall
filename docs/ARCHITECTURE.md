@@ -41,7 +41,7 @@ Deploys go through **Workers Builds git hooks only**, with `wrangler.jsonc` as c
 | `nehemiahs-wall-staging` | `staging` | `npx wrangler deploy --env staging` |
 | `nehemiahs-wall` (production) | `production` | `npx wrangler deploy`. Created only after the captain's production go |
 
-**Current blocker (2026-11-21, ~18:07 ET):** `config_autofill` returns HTTP 404 / error 12000 (Not found) for `klappy-agents/nehemiahs-wall` and succeeds for the already connected `klappy/hud`. The cause is not verified. A missing repository connection or GitHub app grant is a hypothesis, not a proven diagnosis. No write/deploy permission has been tested, no connection changed, and no Worker deployed.
+**Resolved (2026-11-21, ~9:31 PM ET):** the repo moved to `klappy/nehemiahs-wall`. Workers Builds sees it (repo connection under GitHub owner id 118073); `nehemiahs-wall-dev` has a `main`-only trigger (`npm ci && npm test`, then `npx wrangler deploy --env dev`), and the first build deployed `56f6a003` to https://nehemiahs-wall-dev.klappy.workers.dev. *History:* at ~18:07 ET `config_autofill` returned 404 / 12000 for the old `klappy-agents/nehemiahs-wall` location.
 
 ## MCP
 - Endpoint: `https://<worker>/mcp` (Streamable HTTP, stateless).
