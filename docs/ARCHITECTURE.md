@@ -1,6 +1,14 @@
 # Architecture
 
-This architecture is borrowed, not invented. Its shape follows [klappy/agent-role-service](https://github.com/klappy/agent-role-service) (Durable Object as single writer, the official MCP SDK, HTTP twins, git-hook deploys) and [klappy/hud](https://github.com/klappy/hud) (capability-URL access, touchscreen Worker UI).
+This architecture is mostly borrowed:
+- [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/): one object per room as the single writer.
+- The official [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk): Streamable HTTP.
+- Cloudflare Workers Builds: git-hook deploys.
+- [klappy/hud](https://github.com/klappy/hud): capability-URL access and the touchscreen Worker UI.
+
+The 1:1 HTTP twins and the pure `src/core/` are this project's own design.
+
+*Correction, captain 2026-11-21 7:42 PM ET: ARS not used.* ARS is `klappy/agent-role-service`, which an earlier draft cited as the source of this shape.
 
 ```
 browser (Builder) ──HTTP /v1/execute──┐

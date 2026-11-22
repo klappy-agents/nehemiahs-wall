@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import { makeHandlers } from "./tools.js";
 
-// Official SDK, Streamable HTTP, stateless — borrowed, not hand-rolled (agent-role-service pattern).
+// Official SDK, Streamable HTTP, stateless — borrowed from the SDK itself, not hand-rolled.
 export async function handleMcp(request, env, grant) {
   const h = makeHandlers(env, grant);
   const server = new McpServer({ name: "nehemiahs-wall", version: env.VERSION ?? "0.0.0-scaffold" });
