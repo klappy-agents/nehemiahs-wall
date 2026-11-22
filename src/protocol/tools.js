@@ -1,20 +1,20 @@
 // The ONE tool surface: docs · execute · telemetry (klappy://canon/constraints/mcp-tool-surface-ceiling).
 // HTTP twins at POST /v1/<tool> share these handlers with the MCP face.
-export const DOCS = `Nehemiah's Wall — co-op Bible game (scaffold).
+export const DOCS = `Nehemiah's Wall — co-op Bible game (scaffold). Dev only: no shared key, your own agent holds its own seat.
 You are the Watchman. You never see the grid; you see sections, threats and the stone queue.
-No shared key. Your own agent gets its own room capability:
-  execute { op: "create" } → { room, watchmanToken, builderLink }. Keep watchmanToken; give builderLink to your human (it opens the board, no paste).
+  execute { op: "create" } → { room, watchmanToken, builderLink }. Keep watchmanToken secret; give builderLink to your human (it opens the board; the token rides in the #fragment, never sent to the server).
   execute { room, cap: watchmanToken, op: "join" | "look" | "act", action?, expectedRev?, requestId? }
   execute { room, cap: watchmanToken, op: "invite", seat } → a single-use 15-minute claim code for another agent.
-  execute { room, op: "claim", code } → that agent's own seat token.
+  execute { room, op: "claim", code } → that agent's own seat token (the previous holder of that seat is revoked).
   execute { room, cap: watchmanToken, op: "rotate", seat: "builder" } → a new builderLink; the old one stops working.
-A token grants one seat. Missing/unknown token → capability_required; the other seat → seat_not_granted.
+Errors: capability_required (missing/unknown/revoked token; HTTP 401) · seat_not_granted (the other seat) · rate_limited (+ retryAfter; HTTP 429) · room_cap_reached.
+Limits: create 5/10 min per IP and 50/h per environment; execute 120/min per token; 30 bad tokens or 10 bad claim codes per IP per room per 10 min. Rooms never joined are deleted after 24 h, idle rooms after 7 days.
 Scaffold stage: only join/look/noop exist. Rules arrive in M2. Governing spec: docs/SPEC.md; auth: docs/AUTH.md.
 Tool ceiling: klappy://canon/constraints/mcp-tool-surface-ceiling`;
 
 import { validRoomId } from "../core/limits.js";
 import { SEATS, granted } from "../core/game.js";
-import { sha256hex } from "../core/caps.js";
+import { VERSION } from "../version.js";
 
 // grant comes from the edge (src/auth.js). Key mode: the seats this caller holds, checked here and again in core.
 // Capability mode: grant.roles is empty; the seat comes from the token, verified by the Room DO.
@@ -39,14 +39,14 @@ export function makeHandlers(env, grant, ctx = {}) {
       return { error: "unsupported_op" };
     },
     async telemetry() {
-      return { environment: env.ENVIRONMENT ?? "unknown", version: env.VERSION ?? "0.0.0-scaffold", authMode: env.AUTH_MODE ?? "key", note: "counters arrive in M3" };
+      return { environment: env.ENVIRONMENT ?? "unknown", version: VERSION, authMode: env.AUTH_MODE ?? "key", note: "counters arrive in M3" };
     },
   };
 
   async function capExecute({ room, seat, op = "look", action = "noop", expectedRev, requestId, cap, code }) {
     if (op === "create") {
       const registry = env.REGISTRY.get(env.REGISTRY.idFromName("registry"));
-      const made = await registry.capCreate(await sha256hex(`ip:${ctx.ip ?? "unknown"}`));
+      const made = await registry.capCreate(ctx.ip ?? "unknown");
       if (!made.ok) return { error: made.error, ...(made.retryAfter ? { retryAfter: made.retryAfter } : {}) };
       const init = await stub(made.room).capInit(made.room);
       if (!init.ok) return { error: init.error };
@@ -54,11 +54,11 @@ export function makeHandlers(env, grant, ctx = {}) {
     }
     if (!validRoomId(room)) return { error: "room_capability_required" };
     if (seat !== undefined && !SEATS.includes(seat)) return { error: "unknown_seat" };
-    if (op === "claim") return shape(await stub(room).capClaim(code), room);
+    if (op === "claim") return shape(await stub(room).capClaim(code, ctx.ip ?? "unknown"), room);
     const token = cap ?? ctx.bearer;
     if (!token) return { error: "capability_required" };
     if (!["look", "join", "act", "invite", "rotate"].includes(op)) return { error: "unsupported_op" };
-    return shape(await stub(room).capCall(token, { op, seat, action, expectedRev, requestId }), room);
+    return shape(await stub(room).capCall(token, { op, seat, action, expectedRev, requestId }, ctx.ip ?? "unknown"), room);
   }
   function builderLink(room, token) {
     return `${ctx.origin ?? ""}/r/${room}#cap=${token}`;

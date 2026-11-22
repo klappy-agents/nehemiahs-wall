@@ -18,7 +18,35 @@ export const CAPS = Object.freeze({
   CREATE_IP_WINDOW_MS: 10 * 60 * 1000,
   CREATE_PER_ENV: 50, // creates per environment per hour
   CREATE_ENV_WINDOW_MS: 60 * 60 * 1000,
+  BAD_TOKEN_PER_IP: 30, // failed execute (unknown/revoked token) per IP per room per window
+  BAD_TOKEN_WINDOW_MS: 10 * 60 * 1000,
 });
+
+// Salted, truncated IP keys: raw IPs are never stored, and a stored key cannot be reversed by hashing
+// the IPv4 space without the per-DO salt. Salt lives in the DO that stores the keys.
+export async function ipKey(salt, ip) {
+  return (await sha256hex(`${salt}:${ipBucket(ip)}`)).slice(0, 24);
+}
+// IPv6 clients (and egress pools) rotate within their /64; one /64 is one caller for rate limits.
+// Found live on nehemiahs-wall-dev 2026-11-21: per-address IPv6 keys let creates spread across addresses.
+export function ipBucket(ip) {
+  const s = String(ip ?? "unknown").trim().toLowerCase();
+  if (!s.includes(":")) return s;
+  const [head, tail = ""] = s.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail ? tail.split(":") : [];
+  const full = s.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+  return full.slice(0, 4).map((x) => (x || "0").replace(/^0+(?=.)/, "")).join(":") + "::/64";
+}
+// A map of key → hit list, pruned of keys with no live hits (bounded by the window's own caps).
+export function pruneHits(map = {}, now, windowMs) {
+  const out = {};
+  for (const [k, hits] of Object.entries(map)) {
+    const live = hits.filter((t) => now - t < windowMs);
+    if (live.length) out[k] = live;
+  }
+  return out;
+}
 
 const defaultRand = (n) => crypto.getRandomValues(new Uint8Array(n));
 
@@ -57,19 +85,30 @@ export class RegistryCore {
   constructor(storage, { max, now = () => Date.now(), rand = defaultRand } = {}) {
     Object.assign(this, { storage, max, now, rand });
   }
-  // ipKey is a hash of the caller IP (raw IPs are not stored).
-  async create(ipKey) {
+  async salt() {
+    let salt = await this.storage.get("salt");
+    if (!salt) await this.storage.put("salt", (salt = mintToken(this.rand)));
+    return salt;
+  }
+  // ip is the caller IP; only a salted, truncated hash is stored, in one map pruned on every create.
+  async create(ip) {
     const now = this.now();
-    const ip = slidingWindow(await this.storage.get(`ip:${ipKey}`), now, CAPS.CREATE_IP_WINDOW_MS, CAPS.CREATE_PER_IP);
-    if (!ip.ok) return fail("rate_limited", { retryAfter: ip.retryAfter });
+    const key = await ipKey(await this.salt(), ip);
+    const ips = pruneHits(await this.storage.get("ips"), now, CAPS.CREATE_IP_WINDOW_MS);
+    const ipw = slidingWindow(ips[key], now, CAPS.CREATE_IP_WINDOW_MS, CAPS.CREATE_PER_IP);
+    if (!ipw.ok) {
+      await this.storage.put("ips", ips);
+      return fail("rate_limited", { retryAfter: ipw.retryAfter });
+    }
     const envw = slidingWindow(await this.storage.get("creates"), now, CAPS.CREATE_ENV_WINDOW_MS, CAPS.CREATE_PER_ENV);
     if (!envw.ok) return fail("rate_limited", { retryAfter: envw.retryAfter });
     const count = (await this.storage.get("count")) ?? 0;
     if (count >= this.max) return fail("room_cap_reached");
+    ips[key] = ipw.hits;
     let id;
     do id = mintRoomId(this.rand);
     while (await this.storage.get(`room:${id}`));
-    await this.storage.put({ [`ip:${ipKey}`]: ip.hits, creates: envw.hits, [`room:${id}`]: now, count: count + 1 });
+    await this.storage.put({ ips, creates: envw.hits, [`room:${id}`]: now, count: count + 1 });
     return { ok: true, room: id };
   }
   async release(id) {
@@ -92,7 +131,7 @@ export class RoomCore {
   async init(id, seed) {
     if (await this.storage.get("meta")) return fail("room_exists");
     const now = this.now();
-    await this.storage.put({ state: newRoom({ id, seed, now }), meta: { id, createdAt: now, lastActive: now, joined: false } });
+    await this.storage.put({ state: newRoom({ id, seed, now }), meta: { id, createdAt: now, lastActive: now, joined: false, salt: mintToken(this.rand) } });
     const watchmanToken = await this.issue("watchman");
     const builderToken = await this.issue("builder");
     await this.storage.setAlarm(now + CAPS.UNJOINED_MS);
@@ -119,10 +158,35 @@ export class RoomCore {
     return { ok: true, seat: rec.seat, hash: h };
   }
 
-  // Every seat-token call goes through here. req: { op, seat?, action?, expectedRev?, requestId?, inviteSeat? }
-  async call(token, req = {}) {
+  // Per-IP failure gate for this room (bad tokens, bad claim codes). Only failures count, so a caller
+  // spraying bad codes cannot lock out a legitimate holder on another address. Never writes to a room
+  // that does not exist. kind: "bad" (execute) | "claim".
+  async failGate(kind, ip, max, windowMs) {
+    const meta = await this.storage.get("meta");
+    if (!meta) return { ok: true, record: async () => {} };
+    const now = this.now();
+    const k = await ipKey(meta.salt ?? meta.id, ip);
+    const map = pruneHits(await this.storage.get(`fails:${kind}`), now, windowMs);
+    const live = map[k] ?? [];
+    if (live.length >= max) return fail("rate_limited", { retryAfter: Math.max(1, Math.ceil((live[0] + windowMs - now) / 1000)) });
+    return {
+      ok: true,
+      record: async () => {
+        map[k] = [...live, now];
+        await this.storage.put(`fails:${kind}`, map);
+      },
+    };
+  }
+
+  // Every seat-token call goes through here. req: { op, seat?, action?, expectedRev?, requestId? }
+  async call(token, req = {}, ip) {
+    const gate = await this.failGate("bad", ip, CAPS.BAD_TOKEN_PER_IP, CAPS.BAD_TOKEN_WINDOW_MS);
+    if (!gate.ok) return gate;
     const v = await this.verify(token);
-    if (!v.ok) return v;
+    if (!v.ok) {
+      await gate.record();
+      return v;
+    }
     const rl = minuteWindow(await this.storage.get(`rl:${v.hash}`), this.now(), CAPS.EXEC_PER_MIN);
     await this.storage.put(`rl:${v.hash}`, rl.counter);
     if (!rl.ok) return fail("rate_limited", { retryAfter: rl.retryAfter });
@@ -159,19 +223,20 @@ export class RoomCore {
     return fail("unsupported_op");
   }
 
-  // Single-use code → fresh seat token for the claiming agent. 10 tries per room per 10 min.
-  async claim(code) {
+  // Single-use code → fresh seat token for the claiming agent. 10 failed tries per IP per room per 10 min
+  // (failures only, per address: a spammer cannot burn a legitimate claimer's attempts).
+  async claim(code, ip) {
     if (!(await this.storage.get("meta"))) return fail("capability_required");
     const now = this.now();
-    const tries = slidingWindow(await this.storage.get("claimTries"), now, CAPS.CLAIM_WINDOW_MS, CAPS.CLAIM_TRIES);
-    await this.storage.put("claimTries", tries.hits);
-    if (!tries.ok) return fail("rate_limited", { retryAfter: tries.retryAfter });
-    if (!looksLikeToken(code)) return fail("capability_required");
+    const gate = await this.failGate("claim", ip, CAPS.CLAIM_TRIES, CAPS.CLAIM_WINDOW_MS);
+    if (!gate.ok) return gate;
+    const bad = async () => (await gate.record(), fail("capability_required"));
+    if (!looksLikeToken(code)) return bad();
     const key = `inv:${await sha256hex(code)}`;
     const inv = await this.storage.get(key);
-    if (!inv) return fail("capability_required");
+    if (!inv) return bad();
     await this.storage.delete(key); // single use, even if expired
-    if (inv.exp <= now) return fail("capability_required");
+    if (inv.exp <= now) return bad();
     return { ok: true, seat: inv.seat, token: await this.issue(inv.seat) };
   }
 
@@ -182,8 +247,10 @@ export class RoomCore {
     const now = this.now();
     const expired = (!meta.joined && now - meta.createdAt >= CAPS.UNJOINED_MS) || now - meta.lastActive >= CAPS.ROOM_IDLE_MS;
     if (expired) {
-      await this.storage.deleteAll();
+      // Release the registry slot FIRST. If release throws, nothing is deleted and the DO alarm retries;
+      // release is idempotent, so a retry after a successful release just deletes the room.
       await this.release(meta.id);
+      await this.storage.deleteAll();
       return { deleted: true };
     }
     const next = meta.joined ? meta.lastActive + CAPS.ROOM_IDLE_MS : Math.min(meta.createdAt + CAPS.UNJOINED_MS, meta.lastActive + CAPS.ROOM_IDLE_MS);

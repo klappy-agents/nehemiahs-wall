@@ -13,17 +13,17 @@
   "assets": { "directory": "./public", "binding": "ASSETS" },
   "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "Room" }, { "name": "REGISTRY", "class_name": "RoomRegistry" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }, { "tag": "v2", "new_sqlite_classes": ["RoomRegistry"] }],
-  "vars": { "ENVIRONMENT": "production", "VERSION": "0.0.1-scaffold", "AUTH_MODE": "key" },
+  "vars": { "ENVIRONMENT": "production", "AUTH_MODE": "key" },
   "env": {
     "dev": {
       "name": "nehemiahs-wall-dev",
       "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "Room" }, { "name": "REGISTRY", "class_name": "RoomRegistry" }] },
-      "vars": { "ENVIRONMENT": "dev", "VERSION": "0.0.1-scaffold", "AUTH_MODE": "capability" }
+      "vars": { "ENVIRONMENT": "dev", "AUTH_MODE": "capability" }
     },
     "staging": {
       "name": "nehemiahs-wall-staging",
       "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "Room" }, { "name": "REGISTRY", "class_name": "RoomRegistry" }] },
-      "vars": { "ENVIRONMENT": "staging", "VERSION": "0.0.1-scaffold", "AUTH_MODE": "key" }
+      "vars": { "ENVIRONMENT": "staging", "AUTH_MODE": "key" }
     }
   }
 }

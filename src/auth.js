@@ -1,7 +1,7 @@
 // Edge auth. Fails closed: no configured key → every protected route 401s.
 // AUTH_MODE "key" (default, and what wrangler.jsonc sets for every environment):
 //   MCP_KEY grants the Watchman seat; BUILDER_KEY grants the Builder seat. One key → one role.
-// AUTH_MODE "capability" (D10 agent-first, dev): no shared key. The edge admits the open transport and only
+// AUTH_MODE "capability" (D10 agent-first; honoured only when ENVIRONMENT is "dev" or "local"): no shared key. The edge admits the open transport and only
 //   extracts the caller's Bearer seat token; the Room Durable Object verifies it (core/caps.js). MCP_KEY /
 //   BUILDER_KEY are not read in this mode, so they can never become a user-access path.
 // AUTH_MODE "open": explicit no-key local mode, honoured ONLY when ENVIRONMENT === "local"
@@ -25,7 +25,12 @@ export function authenticate(request, env) {
     if (env.ENVIRONMENT === "local") return { ok: true, grant: { roles: ["builder", "watchman"], mode: "open-local" } };
     return { ok: false, error: "unauthorized" }; // open mode outside local is a misconfiguration: refuse
   }
-  if (mode === "capability") return { ok: true, grant: { roles: [], mode: "capability" }, bearer: bearerOf(request) };
+  if (mode === "capability") {
+    // Code gate (Terry P2 on #7): capability mode opens unauthenticated room creation, so it is honoured
+    // ONLY on dev (and local) until D10-a is decided. A staging/production var flip to "capability" is refused.
+    if (env.ENVIRONMENT !== "dev" && env.ENVIRONMENT !== "local") return { ok: false, error: "unauthorized" };
+    return { ok: true, grant: { roles: [], mode: "capability" }, bearer: bearerOf(request) };
+  }
   if (mode !== "key") return { ok: false, error: "unauthorized" };
   const header = request.headers.get("authorization") || "";
   const m = header.match(/^Bearer\s+(.+)$/i);

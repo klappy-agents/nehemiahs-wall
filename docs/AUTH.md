@@ -13,11 +13,12 @@
 - **`/mcp`:** an open transport. `docs`/`telemetry` need no key. `execute` needs a seat token (header, or the `cap` argument for MCP clients). Still three tools: `create`/`invite`/`claim`/`rotate` are `execute` ops.
 
 ## Fail-closed and abuse bounds
-- Missing, unknown, expired or foreign tokens → `401 capability_required`. Wrong seat → `seat_not_granted`. `AUTH_MODE` adds `"capability"`; `"open"` stays local-only.
+- Missing, unknown, expired or foreign tokens → `401 capability_required`. Wrong seat → `seat_not_granted`. `AUTH_MODE` adds `"capability"`, code-gated to `ENVIRONMENT` dev/local (a staging/production flip is refused with 401 until D10-a); `"open"` stays local-only.
 - Kept: 200 rooms/env (`room_cap_reached`) and the 64 KiB body cap (`413`).
 - Added:
   - `create` is limited to 5 per 10 min per IP and 50/h per env, with `429` + `retry-after` past that.
-  - `execute` is limited to 120/min per token, and `claim` to 10 tries per room per 10 min.
+  - `execute` is limited to 120/min per token. Failures are limited per IP per room per 10 min: 30 bad tokens, 10 bad claim codes. Only failures count, so spam from one address cannot lock out a legitimate claimer (this refines the PRD's "10 tries per room").
+  - IPs are stored only as salted, truncated hashes (IPv6 bucketed by /64) in one map pruned on use. The TTL alarm releases the registry slot before deleting the room.
   - Rooms idle for 7 d are deleted by a DO alarm, and a room never joined is deleted after 24 h.
   - Tokens are never logged or put in a path or query.
 - **Remaining gap D10-a:** whether room creation stays open or gets gated (e.g. Turnstile) before staging goes public. This rides SPEC D10's existing "Klappy confirms before staging goes public". It is not a new step.
