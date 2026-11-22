@@ -27,6 +27,6 @@ These are pre-hosting fixes for the three gaps named in `GATE-RECEIPTS.md`. They
 - **How the cap is counted:** by the `RoomRegistry` Durable Object, one per environment and single-threaded, so the check and the insert are atomic.
 
 ## Still open
-- **The browser shell can't play under key mode yet.** `public/app.js` calls `/v1/execute` without a key, and how the Builder credential reaches the browser is D10, a captain decision. Under key mode the browser gets 401 until D10 is decided.
+- **The browser shell can't play under key mode yet.** `public/app.js` calls `/v1/execute` without a key, and how the Builder credential reaches the browser is D10, a captain decision. Under key mode the browser gets 401 until D10 is decided. Planned direction (no shared user keys; per-room seat capabilities via the link fragment): [AUTH.md](AUTH.md).
 - **Seat binding:** there is no binding of a seat to one holder. Anyone holding the Watchman key can be the Watchman in any room they know the id of.
 - **Unbuilt pieces:** no room retention or expiry, no freeing of registry slots, no rate limiting, and no key rotation runbook.

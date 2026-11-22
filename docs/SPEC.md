@@ -71,7 +71,7 @@ The agent never plays per tick. If measured p95 OODA is longer than the lead tim
   - D7: human Watchman screen in v1?
   - D8: teaching panel behind `?`.
 - **D9 (new, engine):** Oddie's research recommends Phaser 4.2.1 with PartyServer on the room DO, with PixiJS 8 as runner-up. This is research, not a ruling. It gets decided in M4 with a 6B table and a bundle-size check (MCP App cards care about size). The scaffold uses no engine so that either choice stays cheap.
-- **D10 (new, access):** room links are capability URLs, and the MCP door uses a Bearer key (`MCP_KEY` secret per environment, set in M3). Klappy confirms before staging goes public.
+- **D10 (new, access):** room links are capability URLs, and the MCP door uses a Bearer key (`MCP_KEY` secret per environment, set in M3). Klappy confirms before staging goes public. *2026-11-21 9:38 PM ET (captain, relayed): no shared MCP keys for users; every user uses their own agent. Planned replacement for the shared Bearer key: per-room seat capabilities, see [AUTH.md](AUTH.md). Email later.*
 
 ## Gates
 - **Modes:** exploration → planning (this PR) → execution.
