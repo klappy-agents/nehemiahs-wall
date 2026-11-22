@@ -2,7 +2,7 @@
 
 **Status:** planning. This PR holds the spec and a scaffold. No rules engine yet; production is not in scope.
 **Sources:**
-- Ticket spec v2: [klappy/kitchen `rail/1-ordered/2026-11-21-nehemiahs-wall-coop-game/TICKET.md` @ f44bc460](https://github.com/klappy/kitchen/blob/f44bc460ada0ee25d21c1d6fbc4baf51f22d0fdd/rail/1-ordered/2026-11-21-nehemiahs-wall-coop-game/TICKET.md).
+- Ticket spec v2 (live, ARS-corrected): [klappy/kitchen `rail/2-cooking/2026-11-21-nehemiahs-wall-coop-game/TICKET.md` @ 5043d0f1](https://github.com/klappy/kitchen/blob/5043d0f1ba2149726b3dbf92d05b3240a051be27/rail/2-cooking/2026-11-21-nehemiahs-wall-coop-game/TICKET.md). Historical snapshot: [`rail/1-ordered/…/TICKET.md` @ f44bc460](https://github.com/klappy/kitchen/blob/f44bc460ada0ee25d21c1d6fbc4baf51f22d0fdd/rail/1-ordered/2026-11-21-nehemiahs-wall-coop-game/TICKET.md) remains the pre-correction record (before the captain's 2026-11-21 7:42 PM ET "ARS not used" correction).
 - Design contract round 1: [design/CONTRACT.md @ d2057149](https://github.com/klappy/kitchen/blob/d20571495cd437bed1fac9c203a9d5ba0435f6f0/rail/1-ordered/2026-11-21-nehemiahs-wall-coop-game/design/CONTRACT.md), with 17 renders indexed in `DESIGN-LOOP.md`.
 
 ## What it is
