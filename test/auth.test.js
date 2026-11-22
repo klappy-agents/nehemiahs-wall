@@ -99,11 +99,12 @@ test("room ids outside 16–64 url-safe chars are rejected", async () => {
   }
 });
 
-test("wrangler config: every environment sets AUTH_MODE=key; no open mode in config", () => {
+test("wrangler config: dev is capability (D10 agent-first); staging/production stay key; no open mode in config", () => {
   const raw = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8").replace(/^\s*\/\/.*$/gm, "");
   const cfg = JSON.parse(raw);
   assert.equal(cfg.vars.AUTH_MODE, "key");
-  for (const e of ["dev", "staging"]) assert.equal(cfg.env[e].vars.AUTH_MODE, "key", e);
+  assert.equal(cfg.env.dev.vars.AUTH_MODE, "capability");
+  assert.equal(cfg.env.staging.vars.AUTH_MODE, "key");
   assert.equal(/"AUTH_MODE"\s*:\s*"open"/.test(raw), false);
 });
 

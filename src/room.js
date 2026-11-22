@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { newRoom, view, act } from "./core/game.js";
 import { checkStateSize, decideClaim, effectiveMaxRooms } from "./core/limits.js";
+import { RoomCore, RegistryCore } from "./core/caps.js";
 
 // One Durable Object per room: the single writer. State is plain tables; a save is the snapshot.
 // Rooms are created only by an explicit join, and only if the per-environment registry admits them.
@@ -32,6 +33,24 @@ export class Room extends DurableObject {
     await this.ctx.storage.put("state", res.state);
     return { ok: true, view: view(res.state, action.seat, grant) };
   }
+
+  // ── AUTH_MODE "capability" (D10 agent-first). Logic lives in core/caps.js; these are thin DO entry points.
+  core() {
+    const release = (id) => this.env.REGISTRY.get(this.env.REGISTRY.idFromName("registry")).release(id);
+    return new RoomCore(this.ctx.storage, { release });
+  }
+  async capInit(id) {
+    return this.core().init(id, hashSeed(id));
+  }
+  async capCall(token, req) {
+    return this.core().call(token, req);
+  }
+  async capClaim(code) {
+    return this.core().claim(code);
+  }
+  async alarm() {
+    await this.core().alarm();
+  }
 }
 
 // One registry per environment (each env is its own Worker + DO namespace). Single-threaded DO → the
@@ -45,6 +64,14 @@ export class RoomRegistry extends DurableObject {
       await this.ctx.storage.put({ [`room:${id}`]: Date.now(), count: count + 1 });
     }
     return d.ok ? { ok: true } : { ok: false, error: d.error };
+  }
+
+  // Capability mode: the registry mints the room id and applies the create rate limits + room cap.
+  async capCreate(ipKey) {
+    return new RegistryCore(this.ctx.storage, { max: effectiveMaxRooms(this.env) }).create(ipKey);
+  }
+  async release(id) {
+    return new RegistryCore(this.ctx.storage, { max: effectiveMaxRooms(this.env) }).release(id);
   }
 }
 

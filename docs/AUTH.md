@@ -1,6 +1,6 @@
-# Auth: D10 agent-first room capabilities (planned, not implemented)
+# Auth: D10 agent-first room capabilities (implemented on dev only)
 
-**Status:** planned, 2026-11-21. D10 stays the named open fork; nothing here is built yet. The full PRD is in the private cookbook: `klappy/nehemiahs-wall-cookbook` `design/proposals/2026-11-21-d10-agent-first-auth-prd.md`.
+**Status:** implemented on `nehemiahs-wall-dev` only (`AUTH_MODE: "capability"`, `src/core/caps.js`), 2026-11-21. Staging and production stay `key`. D10 stays the named open fork (D10-a) until confirmed before staging goes public. The full PRD is in the private cookbook: `klappy/nehemiahs-wall-cookbook` `design/proposals/2026-11-21-d10-agent-first-auth-prd.md`.
 
 **Direction (captain, 2026-11-21, relayed, sanitized):** 9:38 PM ET: no handing out MCP keys to everyone, since it is not scalable; every user uses their own agent. 9:40 PM ET: "Later we can add email."
 
