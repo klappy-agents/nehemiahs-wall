@@ -5,7 +5,7 @@ These are pre-hosting fixes for the three gaps named in `GATE-RECEIPTS.md`. They
 ## 1. Auth fails closed
 - **Modes:** `AUTH_MODE=key` is the default and is set explicitly in `wrangler.jsonc` for production, dev and staging.
 - **Protected routes:** `/v1/docs`, `/v1/execute`, `/v1/telemetry` and `/mcp` all require `Authorization: Bearer <key>`. A missing key, a wrong key or a missing configured key returns **401**. Only `/health` is public.
-- **Keys:** keys are Worker secrets set per environment and are never in config or the repo. `MCP_KEY` grants the Watchman seat. `BUILDER_KEY` grants the Builder seat.
+- **Keys:** keys are Worker secrets set per environment and are never in config or the repo. `MCP_KEY` grants the Watchman seat. `BUILDER_KEY` grants the Builder seat. **Dev (`nehemiahs-wall-dev`) now runs `AUTH_MODE: "capability"` instead (D10 agent-first, per-room seat tokens, no shared key; PRD: cookbook `design/proposals/2026-11-21-d10-agent-first-auth-prd.md` @ `ca36fb87`). In that mode these keys are never read. Staging and production stay `key` until D10-a is confirmed before staging goes public.**
 - **Open mode:** `AUTH_MODE=open` is an explicit no-key local mode. It is honoured **only** when `ENVIRONMENT=local`, through an untracked `.dev.vars` (see `.dev.vars.example`) or `wrangler dev --var`. In any other environment it is refused with 401.
 
 ## 2. Builder and Watchman powers are separate
@@ -27,6 +27,6 @@ These are pre-hosting fixes for the three gaps named in `GATE-RECEIPTS.md`. They
 - **How the cap is counted:** by the `RoomRegistry` Durable Object, one per environment and single-threaded, so the check and the insert are atomic.
 
 ## Still open
-- **The browser shell can't play under key mode yet.** `public/app.js` calls `/v1/execute` without a key, and how the Builder credential reaches the browser is D10, a captain decision. Under key mode the browser gets 401 until D10 is decided. Planned direction (no shared user keys; per-room seat capabilities via the link fragment): [AUTH.md](AUTH.md).
+- **The browser shell can't play under key mode yet.** `public/app.js` calls `/v1/execute` without a key, and how the Builder credential reaches the browser is D10, a captain decision. Under key mode the browser gets 401 until D10 is decided. Planned direction (no shared user keys; per-room seat capabilities via the link fragment): [AUTH.md](AUTH.md). **Dev capability mode (implemented):** the browser reads its Builder capability from the link fragment `#cap=…` (never sent to the server), clears it from the address bar, and sends it as Bearer. With no capability it shows "ask your agent for your room link".
 - **Seat binding:** there is no binding of a seat to one holder. Anyone holding the Watchman key can be the Watchman in any room they know the id of.
-- **Unbuilt pieces:** no room retention or expiry, no freeing of registry slots, no rate limiting, and no key rotation runbook.
+- **Unbuilt pieces (key mode, staging/production):** no room retention or expiry, no freeing of registry slots, no rate limiting, and no key rotation runbook. Dev capability mode has all four (TTL alarm, slot release, rate limits, `rotate`); see [AUTH.md](AUTH.md).
