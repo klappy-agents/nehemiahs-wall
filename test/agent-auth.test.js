@@ -437,3 +437,41 @@ test("P3 #8-5: a room created before #8 (no meta.salt) gets its own salt; the pu
   assert.equal(keys.includes(await ipKey(c.room, "203.0.113.9")), false);
   assert.equal((await exec(env, { room: c.room, op: "look" }, { bearer: c.watchmanToken })).status, 200, "holders unaffected");
 });
+
+// ── M2 first play: one Fish Gate encounter end to end (Watchman over MCP, Builder over its link's token) ──
+test("first play: Watchman creates + joins over MCP, Builder joins by link; stones fall, Builder plays, Watchman acts without the grid", async () => {
+  const { env, clock } = world();
+  const made = JSON.parse((await mcpCall(env, { op: "create" })).result.content[0].text);
+  const w = made.watchmanToken;
+  const b = capOf(made.builderLink);
+  const room = made.room;
+  const wj = JSON.parse((await mcpCall(env, { room, cap: w, op: "join" })).result.content[0].text);
+  assert.equal(wj.view.encounter.status, "waiting");
+  const bj = await exec(env, { room, seat: "builder", op: "join", requestId: "bj" }, { bearer: b });
+  assert.equal(bj.body.view.encounter.status, "building");
+  const y0 = bj.body.view.falling.cells[0][1];
+  clock.t += 2000;
+  const look = await exec(env, { room, seat: "builder", op: "look" }, { bearer: b });
+  assert.ok(look.body.falling.cells[0][1] > y0, "the stone fell while nobody acted");
+  const moved = await exec(env, { room, seat: "builder", op: "act", action: "move", arg: -1, requestId: "m1" }, { bearer: b });
+  assert.equal(moved.body.ok, true, JSON.stringify(moved.body));
+  const dropped = await exec(env, { room, seat: "builder", op: "act", action: "drop", arg: "hard", requestId: "d1" }, { bearer: b });
+  assert.ok(dropped.body.view.grid.flat().some((v) => v === 1), "a stone is set in the wall");
+  // Watchman: look (no grid), then trumpet the named raid over MCP; Builder motion in between does not make it stale.
+  const wl = JSON.parse((await mcpCall(env, { room, cap: w, op: "look" })).result.content[0].text);
+  assert.equal("grid" in wl, false);
+  assert.equal("falling" in wl, false);
+  await exec(env, { room, seat: "builder", op: "act", action: "move", arg: 1, requestId: "m2" }, { bearer: b });
+  const tr = await mcpCall(env, { room, cap: w, op: "act", action: "trumpet", arg: wl.threats[0].id, expectedRev: wl.rev, requestId: "t1" });
+  assert.equal(tr.result.isError, undefined, tr.result.content[0].text);
+  const tv = JSON.parse(tr.result.content[0].text).view;
+  assert.equal(tv.threats[0].trumpet, true);
+  assert.equal("grid" in tv, false);
+  // Capability checks stay: cross-seat and ungranted acts fail.
+  const cross = await exec(env, { room, seat: "builder", op: "act", action: "drop", requestId: "x1" }, { bearer: w });
+  assert.equal(cross.body.error, "seat_not_granted");
+  const cross2 = await exec(env, { room, op: "act", action: "trumpet", arg: wl.threats[0].id, requestId: "x2" }, { bearer: b });
+  assert.equal(cross2.body.error, "cross_role_action");
+  const none = await exec(env, { room, seat: "builder", op: "act", action: "move", arg: 1 });
+  assert.equal(none.status, 401);
+});

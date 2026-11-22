@@ -34,7 +34,7 @@ test("cross-role actions are rejected with a clear error, even with both seats g
 
 test("own-role actions not yet built are reported as unsupported, not applied", () => {
   const s = newRoom({ id: "r1" });
-  const r = act(s, { seat: "builder", type: "drop", expectedRev: 0 }, builderOnly);
+  const r = act(s, { seat: "watchman", type: "answer_letter", expectedRev: 0 }, watchOnly);
   assert.equal(r.error, "unsupported_action");
   assert.equal(r.state, s);
 });

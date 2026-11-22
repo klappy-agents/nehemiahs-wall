@@ -15,4 +15,4 @@ npx wrangler dev --env dev   # local only; tool routes 401 unless a key is set
 # no-key local play: cp .dev.vars.example .dev.vars   (ENVIRONMENT=local + AUTH_MODE=open; untracked)
 ```
 
-**Status:** M1 scaffold. Nothing is deployed; there is no live URL yet. Deploys go through Workers Builds (dev → staging → production, production only on the captain's explicit go).
+**Status:** M2 first play on dev: one Fish Gate encounter (Builder in the browser, Watchman over MCP). Staging and production are not promoted. Deploys go through Workers Builds (dev → staging → production, production only on the captain's explicit go).

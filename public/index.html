@@ -16,8 +16,25 @@
     <button id="copy" class="quiet" hidden>Copy room link</button>
   </section>
   <section class="panel" id="board" hidden>
-    <div id="field" aria-label="The wall"></div>
-    <p class="note">The falling stones arrive in the next build. Every finished course is saved.</p>
+    <h2 id="status" aria-live="polite">Fish Gate</h2>
+    <p id="courses">0 / 2 courses locked into the wall</p>
+    <p>Next: <b id="next">—</b></p>
+    <p id="cue" class="cue"></p>
+    <div class="wall-wrap">
+      <div id="field" role="img" aria-label="Falling stone and the wall. Use the buttons below, or arrow keys and space, to build two courses."></div>
+      <div id="wall" aria-label="Courses saved as wall"></div>
+    </div>
+    <p id="effects" class="effects" aria-live="polite"></p>
+    <div class="controls" aria-label="Builder controls">
+      <button id="left" aria-label="Move left">←</button>
+      <button id="turn">Rotate ↻</button>
+      <button id="right" aria-label="Move right">→</button>
+      <button id="soft">Lower ↓</button>
+      <button id="drop" class="primary">Drop</button>
+    </div>
+    <button id="restart" class="primary" hidden>Try again</button>
+    <p id="notice" aria-live="polite"></p>
+    <p class="note">Arrow keys to move and rotate. Space to drop. Every finished course locks into the wall and is saved. Two courses hang the Fish Gate doors.</p>
   </section>
 </main>
 <script type="module" src="/app.js"></script>
