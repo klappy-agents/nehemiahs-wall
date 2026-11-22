@@ -17,7 +17,7 @@
 - Kept: 200 rooms/env (`room_cap_reached`) and the 64 KiB body cap (`413`).
 - Added:
   - `create` is limited to 5 per 10 min per IP and 50/h per env, with `429` + `retry-after` past that.
-  - `execute` is limited to 120/min per token. Failures are limited per IP per room per 10 min: 30 bad tokens, 10 bad claim codes. Only failures count, so spam from one address cannot lock out a legitimate claimer. The cookbook PRD §6 is amended to say the same ([klappy/nehemiahs-wall-cookbook#1](https://github.com/klappy/nehemiahs-wall-cookbook/pull/1)).
+  - `execute` is limited to 120/min per token. Failures are limited per IP per room per 10 min: 30 bad tokens, 10 bad claim codes. Only failures count, so spam from one address cannot lock out a legitimate claimer. The cookbook PRD §6 is amended to say the same ([klappy/nehemiahs-wall-cookbook#2](https://github.com/klappy/nehemiahs-wall-cookbook/pull/2)).
   - IPs are stored only as salted, truncated hashes (IPv6 bucketed by /64; IPv4-mapped `::ffff:a.b.c.d` unwrapped to its IPv4 address) in one map pruned on use. Every room has its own random salt; a room from before #8 that lacks one mints it on first use, so the public room id is never a salt. The registry sweeps the unsalted `ip:` keys left by #7 once.
   - The TTL alarm releases the registry slot before deleting the room. If the release fails, the room is kept and the alarm re-arms itself 5 min later, so a stuck release never strands the room or its slot.
   - Rooms idle for 7 d are deleted by a DO alarm, and a room never joined is deleted after 24 h.
