@@ -1,0 +1,20 @@
+{
+  "name": "nehemiahs-wall",
+  "version": "0.0.1",
+  "description": "Nehemiah's Wall \u2014 real-time co-op Bible game on Cloudflare Workers + Durable Objects, with an MCP Watchman seat.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "wrangler dev --env dev",
+    "check": "wrangler deploy --dry-run --env dev --outdir dist"
+  },
+  "license": "UNLICENSED",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "wrangler": "^4.166.0"
+  },
+  "private": true
+}
