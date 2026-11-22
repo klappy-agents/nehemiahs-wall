@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { newRoom, view, act } from "./core/game.js";
+import { newRoom, view, step, advance } from "./core/game.js";
 import { checkStateSize, decideClaim, effectiveMaxRooms } from "./core/limits.js";
 import { RoomCore, RegistryCore } from "./core/caps.js";
 
@@ -19,14 +19,18 @@ export class Room extends DurableObject {
   }
 
   async look(id, seat, grant) {
-    const { state, error } = await this.load(id);
-    return error ? { error } : view(state, seat, grant);
+    const { state: stored, error } = await this.load(id);
+    if (error) return { error };
+    const { state, changed } = advance(stored, Date.now());
+    if (changed && checkStateSize(state).ok) await this.ctx.storage.put("state", state);
+    return view(state, seat, grant);
   }
 
   async act(id, action, grant) {
-    const { state, error } = await this.load(id, { create: action?.type === "join" });
+    const { state: stored, error } = await this.load(id, { create: action?.type === "join" });
     if (error) return { ok: false, error };
-    const res = act(state, action, grant, Date.now());
+    const res = step(stored, action, grant, Date.now());
+    const state = res.advanced;
     if (!res.ok) return { ok: false, error: res.error, rev: state.rev };
     const size = checkStateSize(res.state);
     if (!size.ok) return { ok: false, error: size.error, rev: state.rev };

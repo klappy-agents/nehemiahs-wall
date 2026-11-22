@@ -2,7 +2,7 @@
 // design/proposals/2026-11-21-d10-agent-first-auth-prd.md @ ca36fb87). No shared keys, no signing secret.
 // A seat token is 32 CSPRNG bytes (base64url, 43 chars) scoped to one room + one seat; the room stores only
 // SHA-256(token). Revocation = delete the hash. Tokens are never logged, never in a path or query.
-import { newRoom, view, act } from "./game.js";
+import { newRoom, view, step, advance } from "./game.js";
 import { checkStateSize } from "./limits.js";
 
 export const CAPS = Object.freeze({
@@ -213,7 +213,7 @@ export class RoomCore {
     };
   }
 
-  // Every seat-token call goes through here. req: { op, seat?, action?, expectedRev?, requestId? }
+  // Every seat-token call goes through here. req: { op, seat?, action?, arg?, expectedRev?, requestId? }
   async call(token, req = {}, ip) {
     const gate = await this.failGate("bad", ip, CAPS.BAD_TOKEN_PER_IP, CAPS.BAD_TOKEN_WINDOW_MS);
     if (!gate.ok) return gate;
@@ -240,15 +240,21 @@ export class RoomCore {
       await this.storage.put(`inv:${await sha256hex(code)}`, { seat: target, exp: this.now() + CAPS.CLAIM_TTL_MS });
       return { ok: true, seat: target, code, expiresInSec: CAPS.CLAIM_TTL_MS / 1000 };
     }
-    const state = await this.storage.get("state");
+    const stored = await this.storage.get("state");
     if (op === "look") {
-      await this.storage.put("meta", meta);
+      // Game time moves on every call (stones fall, the raid comes); the advanced state is saved.
+      const { state, changed } = advance(stored, this.now());
+      await this.storage.put(changed && checkStateSize(state).ok ? { meta, state } : { meta });
       return view(state, seat, grant);
     }
     if (op === "join" || op === "act") {
-      const action = op === "join" ? { seat, type: "join", requestId: req.requestId } : { seat, type: req.action, expectedRev: req.expectedRev, requestId: req.requestId };
-      const res = act(state, action, grant, this.now());
-      if (!res.ok) return { ok: false, error: res.error, rev: state.rev };
+      const action = op === "join" ? { seat, type: "join", requestId: req.requestId } : { seat, type: req.action, arg: req.arg, expectedRev: req.expectedRev, requestId: req.requestId };
+      const res = step(stored, action, grant, this.now());
+      const state = res.advanced;
+      if (!res.ok) {
+        await this.storage.put(checkStateSize(state).ok ? { meta, state } : { meta });
+        return { ok: false, error: res.error, rev: state.rev };
+      }
       const size = checkStateSize(res.state);
       if (!size.ok) return { ok: false, error: size.error, rev: state.rev };
       if (op === "join") meta.joined = true;

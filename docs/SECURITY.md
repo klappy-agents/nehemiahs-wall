@@ -13,7 +13,7 @@ These are pre-hosting fixes for the three gaps named in `GATE-RECEIPTS.md`. They
 - **Which seat a caller holds:** a caller holds only the seat(s) its key grants. Asking for another seat's look, join or act returns `seat_not_granted`. So a Watchman key can never receive the Builder slice, which carries the grid.
 - **Cross-role actions:** an action belonging to the other role (for example Watchman `drop`, Builder `trumpet`) returns `cross_role_action`, even under the local open-mode grant.
 - **Where it's checked:** at the edge (`tools.js`) and again in core.
-- **Action names:** these come from `docs/SPEC.md`. Only `join` and `noop` are implemented; the rules for the rest arrive in M2.
+- **Action names:** these come from `docs/SPEC.md`. First play (one Fish Gate encounter) implements Builder `move` / `rotate` / `drop` / `restart` and Watchman `trumpet` / `guard` / `set_next`; `answer_letter` stays unsupported. The Watchman slice still never carries the grid or the falling stone.
 
 ## 3. Rooms and storage are bounded
 | Bound | Value | Why |

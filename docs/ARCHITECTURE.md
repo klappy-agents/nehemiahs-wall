@@ -50,4 +50,6 @@ Deploys go through **Workers Builds git hooks only**, with `wrangler.jsonc` as c
 - Tools: `docs`, `execute { room, seat, op: join | look | act, action, expectedRev, requestId }` and `telemetry`.
 - The Watchman's `look` omits the grid.
 - Stale revisions, duplicate request ids, unknown seats and unsupported actions are rejected without mutating the room.
+- Play acts (Builder `move`/`rotate`/`drop`/`restart`, Watchman `trumpet`/`guard`/`set_next`) carry an `arg` naming their target (dx, turns, soft/hard, threat id, column, quarry id). They validate against that live target, not the revision, so one seat's motion never makes the other's act stale (Oddie design review §4). `noop` keeps the strict revision check.
+- Game time is advanced lazily on every look/act from the injected clock (`advance(state, now)` in `src/core/rules.js`); one call covers at most 5 s, so a closed tab slips the clock instead of collapsing the wall.
 - MCP App (`ui://`, `text/html;profile=mcp-app`): planned for M7 and unverified.

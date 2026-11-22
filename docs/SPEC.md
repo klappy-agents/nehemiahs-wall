@@ -23,7 +23,7 @@ Nehemiah's Wall is a real-time, Tetris-style co-op Bible game.
 | --- | --- | --- |
 | Builder | Browser on phone, iPad or laptop, via a private room link | Planned; the shell exists in this PR |
 | Builder | MCP App card (`ui://`) in Grok, ChatGPT or Claude | **Unverified** in every host; not in v1 acceptance |
-| Watchman | MCP tools `docs` · `execute` · `telemetry` at `/mcp` | Stub in this PR (join/look/noop) |
+| Watchman | MCP tools `docs` · `execute` · `telemetry` at `/mcp` | First play: one Fish Gate encounter (trumpet, guard, set_next); answer_letter later |
 | Voice | Existing Grok Bot in-app voice call plus the sidecar | Outside the product: no audio in the Worker, no voice API |
 
 ## Vodka boundary
@@ -84,6 +84,7 @@ The agent never plays per tick. If measured p95 OODA is longer than the lead tim
 ## Milestones
 - **M1:** this spec plus scaffold.
 - **M2:** rules core (falling stone, course lock, rubble, threats, win and lose, save and restore).
+  - *First play (this slice):* one Fish Gate encounter from kitchen design board 09: two courses, one raid, a visible finish. Builder in the browser, Watchman over MCP. Not yet: the other nine gates, the day clock and day 52, letters (answer_letter), morale. The look is temporary (D1–D8 open).
 - **M3:** Worker, DO and MCP on dev, with a key and telemetry.
 - **M4:** browser UI, engine D9.
 - **M5:** typed co-play trial, with latency p50/p95.

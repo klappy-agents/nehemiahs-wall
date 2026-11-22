@@ -71,3 +71,33 @@ test("a revoked link (server says capability_required) falls back to 'ask your a
   assert.match(b.els["room-line"].textContent, /Ask your agent/);
   assert.notEqual(b.els.board?.hidden, false);
 });
+
+test("first play: the board renders the falling stone; taps send move/rotate/drop as Bearer acts, coalesced under the seat limit", async () => {
+  const view = {
+    ok: true, seats: { builder: "here", watchman: "here" }, encounter: { status: "building", courses: 0, goal: 2 },
+    grid: Array.from({ length: 14 }, () => Array(10).fill(0)), falling: { kind: "tee", by: "quarry", cells: [[4, 0], [3, 1], [4, 1], [5, 1]], landing: [[4, 12], [3, 13], [4, 13], [5, 13]] },
+    next: { kind: "long", by: "watchman" }, cue: [{ side: "left" }], effects: [],
+  };
+  const b = boot(`https://nw.test/r/${ROOM}#cap=${TOKEN}`, { respond: (body) => (body.op === "look" ? view : { ok: true, view }) });
+  await settle();
+  assert.equal(b.els.field.children.length, 140);
+  assert.equal(b.els.field.children.filter((c) => /falling/.test(c.className)).length, 4);
+  assert.equal(b.els.field.children.filter((c) => /landing/.test(c.className)).length, 4);
+  assert.match(b.els.next.textContent, /long stone · Watchman's pick/);
+  assert.match(b.els.cue.textContent, /left/);
+  const before = b.calls.length;
+  const gap = () => new Promise((r) => setTimeout(r, 560));
+  await gap();
+  b.els.left._click(); // goes out at once
+  b.els.left._click(); b.els.left._click(); // arrive inside the gap: coalesced into one move
+  b.els.turn._click();
+  await settle();
+  await gap();
+  b.els.drop._click(); // the next pump sends the coalesced move; rotate and drop wait their turn
+  await settle();
+  const acts = b.calls.slice(before).map((c) => JSON.parse(c.init.body));
+  assert.deepEqual(acts.map((a) => [a.op, a.action, a.arg]), [["act", "move", -1], ["act", "move", -2]]);
+  assert.ok(acts.every((a) => a.seat === "builder" && a.room === ROOM && a.requestId));
+  for (const c of b.calls) assert.equal(c.init.headers.authorization, `Bearer ${TOKEN}`);
+  for (const c of b.calls) assert.equal(c.init.body.includes(TOKEN), false);
+});
