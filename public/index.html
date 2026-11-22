@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nehemiah's Wall</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="page">
+  <header class="bar"><h1>Nehemiah's Wall</h1><p class="verse">“So we built the wall… for the people had a mind to work.” <cite>Neh 4:6</cite></p></header>
+  <section class="panel" id="lobby">
+    <p id="room-line">No room yet.</p>
+    <p class="note">A two-player co-op round: you are the Builder, your agent is the Watchman. Your agent sends you a private room link.</p>
+    <ul class="seats"><li>Builder: <b id="seat-builder">open</b></li><li>Watchman: <b id="seat-watchman">open</b></li></ul>
+    <button id="begin" class="primary">Begin the work</button>
+    <button id="copy" class="quiet" hidden>Copy room link</button>
+  </section>
+  <section class="panel" id="board" hidden>
+    <details id="howto" class="howto" open>
+      <summary>How to play</summary>
+      <ul>
+        <li><b>Goal:</b> fill two whole rows with stone. Each full row locks into the wall as a course. Two courses hang the Fish Gate doors and win the round.</li>
+        <li><b>Controls:</b> ← → move the falling stone, Rotate ↻ turns it, Lower ↓ drops it one row, Drop sets it down. Keys: arrows, ↑ to rotate, Space to drop.</li>
+        <li><b>Your Watchman</b> is your teammate (your agent). They see raids coming but not your grid. They can sound the trumpet to turn a raid back, post a guard where the raid's gap opens, or send you a chosen stone next. Talk to them.</li>
+        <li><b>Raids:</b> a raid that lands pushes a row of rubble up from the bottom. The round is lost if stones or rubble reach the top.</li>
+      </ul>
+    </details>
+    <h2 id="status" aria-live="polite">Fish Gate</h2>
+    <p id="courses">0 / 2 courses locked into the wall</p>
+    <p>Next: <b id="next">—</b></p>
+    <p id="raid" class="raid" role="status" hidden></p>
+    <p id="watch-act" class="watch-act" role="status" hidden></p>
+    <div id="end" class="end" hidden>
+      <p id="end-cause" class="end-cause"></p>
+      <button id="next-round" class="primary" hidden>Next round</button>
+      <button id="restart" class="primary" hidden>Try again</button>
+    </div>
+    <div class="wall-wrap">
+      <div id="field" role="img" aria-label="Falling stone and the wall. Use the buttons below, or arrow keys and space, to build two courses."></div>
+      <div id="wall" aria-label="Courses saved as wall"></div>
+    </div>
+    <p id="effects" class="effects" aria-live="polite"></p>
+    <div class="controls" aria-label="Builder controls">
+      <button id="left" aria-label="Move left">←</button>
+      <button id="turn">Rotate ↻</button>
+      <button id="right" aria-label="Move right">→</button>
+      <button id="soft">Lower ↓</button>
+      <button id="drop" class="primary">Drop</button>
+    </div>
+    <p id="notice" aria-live="polite"></p>
+    <section class="calls" aria-label="The Watchman's calls">
+      <h3>The Watchman's calls</h3>
+      <ol id="calls"></ol>
+      <p id="calls-empty" class="note">No calls yet this round.</p>
+    </section>
+  </section>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

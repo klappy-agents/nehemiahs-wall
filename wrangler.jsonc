@@ -1,0 +1,29 @@
+{
+  // Per-environment Worker projects (klappy://canon/constraints/per-environment-worker-projects):
+  // dev → nehemiahs-wall-dev, staging → nehemiahs-wall-staging, production → nehemiahs-wall.
+  // Auth: dev runs AUTH_MODE "capability" (D10 agent-first: per-room seat tokens, no shared key; docs/AUTH.md).
+  // staging/production stay "key" (fail-closed, no user path) until D10-a is confirmed before staging goes public.
+  // Open no-key mode exists only for ENVIRONMENT=local via an untracked .dev.vars (docs/SECURITY.md).
+  // Each env gets its own Worker and its own Room Durable Object namespace. Deploys: Workers Builds git hook.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nehemiahs-wall",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "Room" }, { "name": "REGISTRY", "class_name": "RoomRegistry" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }, { "tag": "v2", "new_sqlite_classes": ["RoomRegistry"] }],
+  "vars": { "ENVIRONMENT": "production", "AUTH_MODE": "key" },
+  "env": {
+    "dev": {
+      "name": "nehemiahs-wall-dev",
+      "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "Room" }, { "name": "REGISTRY", "class_name": "RoomRegistry" }] },
+      "vars": { "ENVIRONMENT": "dev", "AUTH_MODE": "capability" }
+    },
+    "staging": {
+      "name": "nehemiahs-wall-staging",
+      "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "Room" }, { "name": "REGISTRY", "class_name": "RoomRegistry" }] },
+      "vars": { "ENVIRONMENT": "staging", "AUTH_MODE": "key" }
+    }
+  }
+}

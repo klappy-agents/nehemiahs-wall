@@ -1,0 +1,54 @@
+/* Stone-and-dusk tokens (design CONTRACT round 1, D1 open). Colours live here only. */
+:root {
+  --night: #141821; --dusk: #232a3a; --stone-1: #d9cdb4; --stone-2: #c4b597; --stone-3: #a99877;
+  --mortar: #6f6450; --ink: #efe8da; --muted: #a8a294;
+  --torch: #e8a23a; --watch: #6fa3d8; --threat: #c8553d; --guarded: #6fae7a;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; color: var(--ink); background: linear-gradient(var(--dusk), var(--night)); font: 16px/1.4 system-ui, sans-serif; }
+.page { max-width: 960px; margin: 0 auto; padding: var(--s5) var(--s4); }
+.bar h1 { margin: 0; font-family: Georgia, serif; letter-spacing: .08em; text-transform: uppercase; }
+.verse { color: var(--muted); font-style: italic; margin: var(--s2) 0 var(--s5); }
+.panel { background: rgba(0,0,0,.25); border: 1px solid var(--mortar); border-radius: 6px; padding: var(--s5); margin-bottom: var(--s4); }
+.seats { list-style: none; padding: 0; display: flex; gap: var(--s5); }
+.primary { background: var(--torch); color: var(--night); border: 0; border-radius: 4px; padding: var(--s3) var(--s5); font-weight: 700; font-size: 1rem; min-height: 44px; }
+.quiet { background: none; color: var(--muted); border: 1px solid var(--mortar); border-radius: 4px; padding: var(--s2) var(--s4); min-height: 44px; margin-left: var(--s3); }
+#field { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; max-width: 360px; aspect-ratio: 10 / 14; }
+#field i { background: var(--dusk); border: 1px solid rgba(111,100,80,.35); }
+#field i.set { background: var(--stone-2); box-shadow: inset 2px 2px 0 var(--stone-1), inset -2px -2px 0 var(--stone-3); }
+.note { color: var(--muted); }
+/* First-play cut-stone sketch, deliberately replaceable. D1–D8 remain open. */
+[hidden] { display: none !important; }
+.wall-wrap { width: min(100%, 340px); margin-inline: auto; }
+#field { width: 100%; }
+#field i { min-width: 0; border: 1px solid var(--dusk); }
+#field .set, .saved-course { background: var(--stone-2); border: 1px solid var(--mortar); box-shadow: inset 1px 1px var(--stone-1), inset -2px -2px var(--stone-3); }
+#field .rubble { background: var(--mortar); border: 2px dotted var(--stone-3); }
+#field .landing { outline: 1px dashed var(--muted); outline-offset: -3px; }
+#field .falling { background: var(--stone-1); border: 2px solid var(--torch); outline: none; }
+#field .falling.picked { box-shadow: inset 0 0 0 2px var(--watch); }
+#field .guarded { border-left-color: var(--guarded); }
+.saved-course { height: 20px; margin-top: 2px; background-image: repeating-linear-gradient(90deg, transparent 0 32px, var(--mortar) 32px 34px); }
+.controls { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: center; }
+.controls button { min-width: 48px; min-height: 48px; touch-action: manipulation; user-select: none; }
+button:disabled { opacity: .45; }
+.effects { min-height: 2.8em; color: var(--guarded); }
+#notice { color: var(--muted); }
+.controls button:not(.primary) { background: var(--dusk); color: var(--ink); border: 1px solid var(--mortar); border-radius: 4px; font-size: 1rem; padding: 0 var(--s3); }
+#board h2 { margin: 0 0 var(--s2); font-family: Georgia, serif; font-size: 1.3rem; }
+#board p { margin: var(--s1) 0; }
+/* Fish Gate UX pass: round end, raid and Watchman notices, first-time guidance. Same placeholder tokens; no D1–D8 pick. */
+#board h2.won { color: var(--guarded); }
+#board h2.lost { color: var(--threat); }
+.end { margin: var(--s3) 0; padding: var(--s3) var(--s4); border: 1px solid var(--mortar); border-radius: 4px; background: rgba(0,0,0,.25); }
+#board .end-cause { margin: 0 0 var(--s3); }
+.raid, .watch-act { margin: var(--s2) 0; padding: var(--s2) var(--s3); border-radius: 4px; border-left: 4px solid; background: rgba(0,0,0,.3); }
+.raid { border-color: var(--threat); color: var(--ink); }
+.watch-act { border-color: var(--watch); color: var(--ink); }
+.howto { margin-bottom: var(--s4); padding: var(--s2) var(--s3); border: 1px solid var(--mortar); border-radius: 4px; }
+.howto summary { cursor: pointer; font-weight: 700; min-height: 32px; line-height: 32px; }
+.howto ul { margin: var(--s2) 0 0; padding-left: var(--s5); }
+.howto li { margin: var(--s1) 0; }
+.calls h3 { margin: var(--s4) 0 var(--s1); font-size: 1rem; color: var(--watch); }
+.calls ol { margin: 0; padding-left: var(--s5); color: var(--ink); }
