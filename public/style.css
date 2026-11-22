@@ -33,9 +33,22 @@ body { margin: 0; min-height: 100vh; color: var(--ink); background: linear-gradi
 .controls { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: center; }
 .controls button { min-width: 48px; min-height: 48px; touch-action: manipulation; user-select: none; }
 button:disabled { opacity: .45; }
-.cue { min-height: 1.4em; color: var(--muted); }
 .effects { min-height: 2.8em; color: var(--guarded); }
 #notice { color: var(--muted); }
 .controls button:not(.primary) { background: var(--dusk); color: var(--ink); border: 1px solid var(--mortar); border-radius: 4px; font-size: 1rem; padding: 0 var(--s3); }
 #board h2 { margin: 0 0 var(--s2); font-family: Georgia, serif; font-size: 1.3rem; }
 #board p { margin: var(--s1) 0; }
+/* Fish Gate UX pass: round end, raid and Watchman notices, first-time guidance. Same placeholder tokens; no D1–D8 pick. */
+#board h2.won { color: var(--guarded); }
+#board h2.lost { color: var(--threat); }
+.end { margin: var(--s3) 0; padding: var(--s3) var(--s4); border: 1px solid var(--mortar); border-radius: 4px; background: rgba(0,0,0,.25); }
+#board .end-cause { margin: 0 0 var(--s3); }
+.raid, .watch-act { margin: var(--s2) 0; padding: var(--s2) var(--s3); border-radius: 4px; border-left: 4px solid; background: rgba(0,0,0,.3); }
+.raid { border-color: var(--threat); color: var(--ink); }
+.watch-act { border-color: var(--watch); color: var(--ink); }
+.howto { margin-bottom: var(--s4); padding: var(--s2) var(--s3); border: 1px solid var(--mortar); border-radius: 4px; }
+.howto summary { cursor: pointer; font-weight: 700; min-height: 32px; line-height: 32px; }
+.howto ul { margin: var(--s2) 0 0; padding-left: var(--s5); }
+.howto li { margin: var(--s1) 0; }
+.calls h3 { margin: var(--s4) 0 var(--s1); font-size: 1rem; color: var(--watch); }
+.calls ol { margin: 0; padding-left: var(--s5); color: var(--ink); }
