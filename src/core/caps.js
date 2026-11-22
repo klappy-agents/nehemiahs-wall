@@ -25,7 +25,18 @@ export const CAPS = Object.freeze({
 // Salted, truncated IP keys: raw IPs are never stored, and a stored key cannot be reversed by hashing
 // the IPv4 space without the per-DO salt. Salt lives in the DO that stores the keys.
 export async function ipKey(salt, ip) {
-  return (await sha256hex(`${salt}:${ip ?? "unknown"}`)).slice(0, 24);
+  return (await sha256hex(`${salt}:${ipBucket(ip)}`)).slice(0, 24);
+}
+// IPv6 clients (and egress pools) rotate within their /64; one /64 is one caller for rate limits.
+// Found live on nehemiahs-wall-dev 2026-11-21: per-address IPv6 keys let creates spread across addresses.
+export function ipBucket(ip) {
+  const s = String(ip ?? "unknown").trim().toLowerCase();
+  if (!s.includes(":")) return s;
+  const [head, tail = ""] = s.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail ? tail.split(":") : [];
+  const full = s.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+  return full.slice(0, 4).map((x) => (x || "0").replace(/^0+(?=.)/, "")).join(":") + "::/64";
 }
 // A map of key → hit list, pruned of keys with no live hits (bounded by the window's own caps).
 export function pruneHits(map = {}, now, windowMs) {

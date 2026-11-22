@@ -19,7 +19,7 @@ These are pre-hosting fixes for the three gaps named in `GATE-RECEIPTS.md`. They
 | Bound | Value | Why |
 | --- | --- | --- |
 | Rooms per environment | **200** (hard ceiling; `MAX_ROOMS` may only lower it) | v1 is a private playtest with one Builder and one Watchman per room. 200 leaves wide headroom for the persona harness matrix (15 runs) plus repeats, while capping storage and abuse. New rooms past the cap return `room_cap_reached` and are not created. In dev capability mode a room's slot is freed when its TTL alarm deletes it (24 h never joined, 7 days idle) |
-| Room creation (dev capability) | **5 / 10 min per IP, 50 / h per env** | Over the limit → 429 `rate_limited` + `retry-after`. IPs are stored only as salted, truncated hashes in one pruned map |
+| Room creation (dev capability) | **5 / 10 min per IP, 50 / h per env** | Over the limit → 429 `rate_limited` + `retry-after`. IPs are bucketed (IPv6 by /64) and stored only as salted, truncated hashes in one pruned map |
 | Seat-token calls (dev capability) | **120 / min per token; 30 bad tokens and 10 bad claim codes per IP per room per 10 min** | Only failures count toward the bad-token/claim limits, per address, so spam from one IP cannot lock out a legitimate holder |
 | State per room | **64 KiB** serialized | A full room (14×10 grid plus a log capped at 200 entries) measures ~20–30 KB. Writes over the bound return `state_too_large` and are not stored |
 | Request body | **8 KiB** | An execute call is under 1 KB. Larger bodies return 413 before any room call, `/mcp` included |

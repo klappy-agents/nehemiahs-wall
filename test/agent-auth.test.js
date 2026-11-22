@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { route } from "../src/router.js";
-import { RoomCore, RegistryCore, CAPS, slidingWindow, minuteWindow, sha256hex } from "../src/core/caps.js";
+import { RoomCore, RegistryCore, CAPS, slidingWindow, minuteWindow, sha256hex, ipBucket } from "../src/core/caps.js";
 
 class MemStorage {
   constructor() { this.m = new Map(); this.alarmAt = null; }
@@ -331,4 +331,15 @@ test("P2 carried (HYGIENE 19): one version — /health, telemetry and MCP server
   }), env)).json();
   assert.equal(init.result.serverInfo.version, pkg.version);
   assert.equal(/VERSION/.test(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8")), false);
+});
+
+test("IPv6 callers are rate-limited per /64 (rotating addresses in one /64 share the create limit)", async () => {
+  assert.equal(ipBucket("2a09:bac5:c828:32a0::50b:45"), "2a09:bac5:c828:32a0::/64");
+  assert.equal(ipBucket("2a09:bac5:c828:32a0:1:2:3:4"), "2a09:bac5:c828:32a0::/64");
+  assert.equal(ipBucket("2a09::1"), "2a09:0:0:0::/64");
+  assert.equal(ipBucket("203.0.113.7"), "203.0.113.7");
+  const { env } = world();
+  for (let i = 0; i < 5; i++) await create(env, { ip: `2a09:bac5:c828:32a0::${i + 1}` });
+  assert.equal((await exec(env, { op: "create" }, { ip: "2a09:bac5:c828:32a0::99" })).status, 429);
+  assert.equal((await exec(env, { op: "create" }, { ip: "2a09:bac5:c828:32a1::1" })).status, 200);
 });
