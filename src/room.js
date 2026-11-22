@@ -42,11 +42,11 @@ export class Room extends DurableObject {
   async capInit(id) {
     return this.core().init(id, hashSeed(id));
   }
-  async capCall(token, req) {
-    return this.core().call(token, req);
+  async capCall(token, req, ip) {
+    return this.core().call(token, req, ip);
   }
-  async capClaim(code) {
-    return this.core().claim(code);
+  async capClaim(code, ip) {
+    return this.core().claim(code, ip);
   }
   async alarm() {
     await this.core().alarm();
@@ -67,8 +67,8 @@ export class RoomRegistry extends DurableObject {
   }
 
   // Capability mode: the registry mints the room id and applies the create rate limits + room cap.
-  async capCreate(ipKey) {
-    return new RegistryCore(this.ctx.storage, { max: effectiveMaxRooms(this.env) }).create(ipKey);
+  async capCreate(ip) {
+    return new RegistryCore(this.ctx.storage, { max: effectiveMaxRooms(this.env) }).create(ip);
   }
   async release(id) {
     return new RegistryCore(this.ctx.storage, { max: effectiveMaxRooms(this.env) }).release(id);

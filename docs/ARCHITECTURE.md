@@ -19,8 +19,10 @@ Oddie sidecar (Watchman) ──MCP /mcp───┘          └─ static asset
 | Path | Role |
 | --- | --- |
 | `src/index.js` | Worker entry; exports `Room` and `RoomRegistry` and hands every request to `src/router.js` |
-| `src/router.js` | Edge routing: `/health` (public), `/mcp` and `/v1/<tool>` twins (all keyed, body-size bounded), `/r/<room>`, which serves the client shell, and static assets |
-| `src/auth.js` | Fails closed. `AUTH_MODE=key` everywhere: `MCP_KEY` grants the Watchman seat and `BUILDER_KEY` the Builder seat. Open no-key mode only when `ENVIRONMENT=local` (see `docs/SECURITY.md`) |
+| `src/router.js` | Edge routing: `/health` (public), `/mcp` and `/v1/<tool>` twins (keyed on staging/production; capability on dev; body-size bounded; 401/429 statuses on the twins), `/r/<room>`, which serves the client shell, and static assets |
+| `src/auth.js` | Fails closed. `AUTH_MODE=key` on staging and production: `MCP_KEY` grants the Watchman seat and `BUILDER_KEY` the Builder seat. Dev runs `AUTH_MODE=capability` (per-room seat tokens verified by the Room DO, `src/core/caps.js`; [AUTH.md](AUTH.md)), code-gated to `ENVIRONMENT` dev/local. Open no-key mode only when `ENVIRONMENT=local` (see `docs/SECURITY.md`) |
+| `src/core/caps.js` | D10 agent-first capability core: seat tokens (SHA-256 at rest), invite/claim/rotate, rate limits, TTL alarm. Pure, tested without a Worker |
+| `src/version.js` | The one version: reads `package.json` (HYGIENE 19) for `/health`, telemetry and MCP `serverInfo` |
 | `src/core/limits.js` | Pure caps: room count, state size, body size and room-id shape |
 | `src/room.js` | `Room` Durable Object, SQLite-backed. The single writer: it creates tables only on an explicit join admitted by `RoomRegistry` (the per-environment room cap), applies capability-checked actions (`core.act`) and stores the snapshot only if it is within the size bound |
 | `src/core/game.js` | Pure rules with clock and seed injected. Tables, seat slices, apply/reject. No I/O |

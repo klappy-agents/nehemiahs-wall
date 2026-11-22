@@ -23,7 +23,7 @@ function world({ max = 200 } = {}) {
   const roomStub = (id) => {
     if (!rooms.has(id)) rooms.set(id, new RoomCore(new MemStorage(), { now, release: (rid) => registry.release(rid) }));
     const core = rooms.get(id);
-    return { capInit: (rid) => core.init(rid, 1), capCall: (t, r) => core.call(t, r), capClaim: (c) => core.claim(c), core };
+    return { capInit: (rid) => core.init(rid, 1), capCall: (t, r, ip) => core.call(t, r, ip), capClaim: (c, ip) => core.claim(c, ip), core };
   };
   const env = {
     ENVIRONMENT: "dev", VERSION: "test", AUTH_MODE: "capability",
@@ -158,7 +158,7 @@ test("6. invite → claim gives a second agent its own token; a reused or expire
   assert.equal((await exec(env, { room: c.room, op: "claim", code: inv2.body.code })).status, 401, "expired");
 });
 
-test("claim: 10 tries per room per 10 min", async () => {
+test("claim: 10 failed tries per IP per room per 10 min", async () => {
   const { env } = world();
   const c = await create(env);
   for (let i = 0; i < 10; i++) assert.equal((await exec(env, { room: c.room, op: "claim", code: "z".repeat(43) })).status, 401);
@@ -220,4 +220,115 @@ test("rate-limit helpers", () => {
   assert.equal(slidingWindow([0, 1, 2], 20, 10, 3).ok, true);
   assert.equal(minuteWindow({ win: 0, n: 5 }, 59_000, 5).ok, false);
   assert.equal(minuteWindow({ win: 0, n: 5 }, 60_000, 5).ok, true);
+});
+
+// ── Follow-up hardening (Terry P2/P3 on #7) ──────────────────────────────────────────────────────────
+import { readFileSync } from "node:fs";
+
+const mcpCall = (env, args, ip = "192.0.2.50") =>
+  route(new Request("https://nw.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "cf-connecting-ip": ip },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "execute", arguments: args } }),
+  }), env).then((r) => r.json());
+
+test("P2: capability mode is code-gated to dev/local; a staging/production var flip is refused (401, no room created)", async () => {
+  for (const ENVIRONMENT of ["staging", "production", undefined]) {
+    const { env, regStore } = world();
+    env.ENVIRONMENT = ENVIRONMENT;
+    for (const body of [{ op: "create" }, {}]) {
+      const r = await exec(env, body);
+      assert.equal(r.status, 401, `${ENVIRONMENT} ${JSON.stringify(body)}`);
+    }
+    const docs = await route(new Request("https://nw.test/v1/docs", { method: "POST", body: "{}" }), env);
+    assert.equal(docs.status, 401);
+    assert.equal(await regStore.get("count"), undefined, "no room was created");
+  }
+});
+
+test("P3: claim spam from one IP cannot lock out a legitimate claimer on another IP", async () => {
+  const { env } = world();
+  const c = await create(env);
+  const inv = await exec(env, { room: c.room, op: "invite", seat: "watchman" }, { bearer: c.watchmanToken });
+  for (let i = 0; i < 10; i++) await exec(env, { room: c.room, op: "claim", code: "z".repeat(43) }, { ip: "203.0.113.66" });
+  assert.equal((await exec(env, { room: c.room, op: "claim", code: "z".repeat(43) }, { ip: "203.0.113.66" })).status, 429);
+  const ok = await exec(env, { room: c.room, op: "claim", code: inv.body.code }, { ip: "198.51.100.5" });
+  assert.equal(ok.status, 200);
+  assert.match(ok.body.watchmanToken, /^[A-Za-z0-9_-]{43}$/);
+});
+
+test("P3: invalid-token execute is throttled per IP per room (30 / 10 min); other callers unaffected", async () => {
+  const { env, clock } = world();
+  const c = await create(env);
+  for (let i = 0; i < 30; i++) assert.equal((await exec(env, { room: c.room, op: "look" }, { bearer: "y".repeat(43), ip: "203.0.113.77" })).status, 401);
+  const r = await exec(env, { room: c.room, op: "look" }, { bearer: "y".repeat(43), ip: "203.0.113.77" });
+  assert.equal(r.status, 429);
+  assert.ok(Number(r.headers.get("retry-after")) > 0);
+  assert.equal((await exec(env, { room: c.room, op: "look" }, { bearer: c.watchmanToken, ip: "198.51.100.9" })).status, 200);
+  clock.t += 10 * 60 * 1000;
+  assert.equal((await exec(env, { room: c.room, op: "look" }, { bearer: "y".repeat(43), ip: "203.0.113.77" })).status, 401);
+});
+
+test("P3: bad tokens against a room that does not exist write nothing", async () => {
+  const { env, rooms } = world();
+  const ghost = "ghost_room_abcdefghij";
+  await exec(env, { room: ghost, op: "look" }, { bearer: "y".repeat(43) });
+  assert.equal(rooms.get(ghost).storage.m.size, 0);
+});
+
+test("P3: IP keys are salted, truncated, held in one map and pruned (no raw or unsalted IP, no unbounded keys)", async () => {
+  const { env, clock, regStore } = world();
+  await create(env, { ip: "203.0.113.7" });
+  const keys = [...regStore.m.keys()];
+  assert.equal(keys.some((k) => k.startsWith("ip:")), false);
+  const dump = JSON.stringify([...regStore.m]);
+  assert.equal(dump.includes("203.0.113.7"), false);
+  assert.equal(dump.includes(await sha256hex("ip:203.0.113.7")), false);
+  assert.equal(dump.includes(await sha256hex("203.0.113.7")), false);
+  assert.equal(Object.keys(await regStore.get("ips")).length, 1);
+  clock.t += CAPS.CREATE_IP_WINDOW_MS;
+  await create(env, { ip: "203.0.113.8" });
+  assert.equal(Object.keys(await regStore.get("ips")).length, 1, "the stale key was pruned");
+});
+
+test("P3: alarm releases the registry slot before deleting; a failed release deletes nothing and retries cleanly", async () => {
+  const { env, clock, rooms, regStore } = world();
+  const a = await create(env);
+  const core = rooms.get(a.room);
+  const realRelease = core.release;
+  core.release = async () => { throw new Error("registry unavailable"); };
+  clock.t += CAPS.UNJOINED_MS;
+  await assert.rejects(() => core.alarm());
+  assert.ok(await core.storage.get("meta"), "room kept when release fails");
+  assert.equal(await regStore.get("count"), 1);
+  core.release = realRelease;
+  assert.equal((await core.alarm()).deleted, true);
+  assert.equal(await regStore.get("count"), 0);
+  assert.equal(core.storage.m.size, 0);
+});
+
+test("P3: MCP tool errors carry isError; successes do not", async () => {
+  const { env } = world();
+  const bad = await mcpCall(env, { room: "room_abcdefghijklmnop", op: "look" });
+  assert.equal(bad.result.isError, true);
+  assert.equal(JSON.parse(bad.result.content[0].text).error, "capability_required");
+  const good = await mcpCall(env, { op: "create" });
+  assert.notEqual(good.result.isError, true);
+});
+
+test("P2 carried (HYGIENE 19): one version — /health, telemetry and MCP serverInfo all read package.json; wrangler has no VERSION var", async () => {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const { env } = world();
+  env.VERSION = "stale-var-must-be-ignored";
+  const h = await (await route(new Request("https://nw.test/health"), env)).json();
+  assert.equal(h.version, pkg.version);
+  const t = await (await route(new Request("https://nw.test/v1/telemetry", { method: "POST", body: "{}" }), env)).json();
+  assert.equal(t.version, pkg.version);
+  const init = await (await route(new Request("https://nw.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "t", version: "0" } } }),
+  }), env)).json();
+  assert.equal(init.result.serverInfo.version, pkg.version);
+  assert.equal(/VERSION/.test(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8")), false);
 });

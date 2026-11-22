@@ -2,6 +2,7 @@ import { handleMcp } from "./protocol/mcp.js";
 import { makeHandlers } from "./protocol/tools.js";
 import { authenticate } from "./auth.js";
 import { LIMITS } from "./core/limits.js";
+import { VERSION } from "./version.js";
 
 const json = (v, status = 200, extra = {}) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json", ...extra } });
 
@@ -26,7 +27,7 @@ async function readBody(request) {
 
 export async function route(request, env) {
   const url = new URL(request.url);
-  if (url.pathname === "/health") return json({ ok: true, app: "nehemiahs-wall", environment: env.ENVIRONMENT, version: env.VERSION });
+  if (url.pathname === "/health") return json({ ok: true, app: "nehemiahs-wall", environment: env.ENVIRONMENT, version: VERSION });
 
   const twin = url.pathname.match(/^\/v1\/(docs|execute|telemetry)$/);
   if (url.pathname === "/mcp" || (twin && request.method === "POST")) {
