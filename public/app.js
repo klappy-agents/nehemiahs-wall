@@ -15,12 +15,19 @@ function takeCap(room) {
   }
   return sessionStorage.getItem(`cap:${room}`);
 }
+// A call that never settles would leave the client busy forever (a frozen board), so each one is bounded.
+const CALL_TIMEOUT_MS = 8000;
 function makeCall(cap) {
-  return (body) => fetch("/v1/execute", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${cap}` },
-    body: JSON.stringify(body),
-  }).then((r) => r.json());
+  return (body) => {
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), CALL_TIMEOUT_MS) : null;
+    return fetch("/v1/execute", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${cap}` },
+      body: JSON.stringify(body),
+      ...(ctl ? { signal: ctl.signal } : {}),
+    }).then((r) => r.json()).finally(() => timer && clearTimeout(timer));
+  };
 }
 function askAgent() {
   $("room-line").textContent = "Ask your agent for your room link. (Your agent creates the room and sends you a private Builder link.)";
@@ -72,6 +79,23 @@ function coalesce(queue, action, arg) {
   if (queue.length < 6) queue.push({ action, ...(arg !== undefined ? { arg } : {}) });
   return queue;
 }
+// Move, rotate and drop only make sense while the round is building; restart only once it is won or lost.
+// Taps that arrive in the wrong phase are not queued: a queue full of stale drops used to swallow the restart.
+const STONE_ACTS = new Set(["move", "rotate", "drop"]);
+function accepts(phase, action) {
+  if (action === "restart") return phase === "won" || phase === "lost";
+  return STONE_ACTS.has(action) && phase === "building";
+}
+// Restart jumps the line: any stone taps still waiting are for the finished round and can only fail.
+function enqueue(queue, phase, action, arg) {
+  if (!accepts(phase, action)) return queue;
+  if (action === "restart") {
+    queue.length = 0;
+    queue.push({ action });
+    return queue;
+  }
+  return coalesce(queue, action, arg);
+}
 async function enter(room, cap) {
   const call = makeCall(cap);
   const pending = [];
@@ -80,6 +104,15 @@ async function enter(room, cap) {
   let lastInput = 0;
   let stopped = false;
   let waitUntil = 0;
+  let phase = null; // encounter status from the latest view: waiting | building | won | lost
+  function show(v) {
+    const before = phase;
+    phase = v?.encounter?.status ?? phase;
+    // The round just ended (or restarted under us): taps queued for the old phase can never land.
+    if (phase !== before) for (let i = pending.length - 1; i >= 0; i--) if (!accepts(phase, pending[i].action)) pending.splice(i, 1);
+    if (phase !== "won" && phase !== "lost") $("restart").disabled = false;
+    render(v);
+  }
   async function send(body) {
     busy = true;
     last = Date.now();
@@ -88,18 +121,27 @@ async function enter(room, cap) {
       if (out.error === "capability_required" || out.error === "seat_not_granted") { stopped = true; askAgent(); return; }
       if (out.error === "rate_limited") {
         waitUntil = Date.now() + (out.retryAfter ?? 5) * 1000;
+        // A rate-limited call never reached the rules, so a restart is kept and goes out after the wait.
+        if (body.action === "restart" && !pending.length) pending.push({ action: "restart" });
         $("notice").textContent = "Rest a moment. Reconnecting to your wall…";
         return;
       }
       if (out.error) {
-        if (!["round_over", "waiting_for_watchman"].includes(out.error)) $("notice").textContent = "That move could not be made. Your wall is safe.";
+        if (["round_over", "round_in_progress", "waiting_for_watchman"].includes(out.error)) {
+          // Our picture of the round is out of date: drop queued taps and look again right away.
+          for (let i = pending.length - 1; i >= 0; i--) if (STONE_ACTS.has(pending[i].action)) pending.splice(i, 1);
+          last = 0;
+          lastInput = 0;
+          $("restart").disabled = false;
+        } else $("notice").textContent = "That move could not be made. Your wall is safe.";
         return out;
       }
       $("notice").textContent = "";
-      render(out.view ?? out);
+      show(out.view ?? out);
       return out;
     } catch {
       $("notice").textContent = "Connection interrupted. Your finished courses are saved. Reconnecting…";
+      if (body.action === "restart") $("restart").disabled = false; // let the Builder press it again
     } finally { busy = false; }
   }
   function pump() {
@@ -116,13 +158,18 @@ async function enter(room, cap) {
   $("room-line").textContent = "Your wall is ready. Your agent holds the Watchman seat.";
   $("begin").hidden = true;
   $("board").hidden = false;
-  const input = (action, arg) => { coalesce(pending, action, arg); pump(); };
+  const input = (action, arg) => { enqueue(pending, phase, action, arg); pump(); };
   $("left").onclick = () => input("move", -1);
   $("right").onclick = () => input("move", 1);
   $("turn").onclick = () => input("rotate");
   $("soft").onclick = () => input("drop", "soft");
   $("drop").onclick = () => input("drop", "hard");
-  $("restart").onclick = () => input("restart");
+  $("restart").onclick = () => {
+    if (!accepts(phase, "restart")) return;
+    input("restart");
+    $("restart").disabled = true; // one restart per finished round; re-enabled by the next view or a failure
+    $("notice").textContent = "Starting the next round…";
+  };
   document.onkeydown = (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
     const k = { ArrowLeft: ["move", -1], ArrowRight: ["move", 1], ArrowUp: ["rotate"], ArrowDown: ["drop", "soft"], " ": ["drop", "hard"] }[e.key];
