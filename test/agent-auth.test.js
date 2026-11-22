@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { route } from "../src/router.js";
-import { RoomCore, RegistryCore, CAPS, slidingWindow, minuteWindow, sha256hex, ipBucket } from "../src/core/caps.js";
+import { RoomCore, RegistryCore, CAPS, slidingWindow, minuteWindow, sha256hex, ipBucket, ipKey } from "../src/core/caps.js";
 
 class MemStorage {
   constructor() { this.m = new Map(); this.alarmAt = null; }
@@ -10,6 +10,9 @@ class MemStorage {
   async put(k, v) { if (typeof k === "object") for (const [a, b] of Object.entries(k)) this.m.set(a, structuredClone(b)); else this.m.set(k, structuredClone(v)); }
   async delete(k) { for (const x of [].concat(k)) this.m.delete(x); }
   async deleteAll() { this.m.clear(); }
+  async list({ prefix = "", limit = Infinity } = {}) {
+    return new Map([...this.m].filter(([k]) => k.startsWith(prefix)).slice(0, limit).map(([k, v]) => [k, structuredClone(v)]));
+  }
   async setAlarm(t) { this.alarmAt = t; }
 }
 
@@ -291,14 +294,16 @@ test("P3: IP keys are salted, truncated, held in one map and pruned (no raw or u
   assert.equal(Object.keys(await regStore.get("ips")).length, 1, "the stale key was pruned");
 });
 
-test("P3: alarm releases the registry slot before deleting; a failed release deletes nothing and retries cleanly", async () => {
+test("P3: alarm releases the registry slot before deleting; a failed release deletes nothing and re-arms the alarm", async () => {
   const { env, clock, rooms, regStore } = world();
   const a = await create(env);
   const core = rooms.get(a.room);
   const realRelease = core.release;
   core.release = async () => { throw new Error("registry unavailable"); };
   clock.t += CAPS.UNJOINED_MS;
-  await assert.rejects(() => core.alarm());
+  const r = await core.alarm();
+  assert.equal(r.deleted, false);
+  assert.equal(core.storage.alarmAt, clock.t + CAPS.ALARM_RETRY_MS, "we re-arm; Cloudflare's own retries are bounded");
   assert.ok(await core.storage.get("meta"), "room kept when release fails");
   assert.equal(await regStore.get("count"), 1);
   core.release = realRelease;
@@ -342,4 +347,93 @@ test("IPv6 callers are rate-limited per /64 (rotating addresses in one /64 share
   for (let i = 0; i < 5; i++) await create(env, { ip: `2a09:bac5:c828:32a0::${i + 1}` });
   assert.equal((await exec(env, { op: "create" }, { ip: "2a09:bac5:c828:32a0::99" })).status, 429);
   assert.equal((await exec(env, { op: "create" }, { ip: "2a09:bac5:c828:32a1::1" })).status, 200);
+});
+
+// ── #8 accepted P3 follow-ups (Terry 6009985315 nits 1–2, 6009993447 findings 1–4)
+
+test("P3 #8-1: failure records re-read the map, so parallel failures are not lost", async () => {
+  const { env, rooms } = world();
+  const c = await create(env);
+  const core = rooms.get(c.room);
+  // Two gates opened before either records (the window verify() leaves between gate and record).
+  const g1 = await core.failGate("bad", "203.0.113.1", CAPS.BAD_TOKEN_PER_IP, CAPS.BAD_TOKEN_WINDOW_MS);
+  const g2 = await core.failGate("bad", "203.0.113.1", CAPS.BAD_TOKEN_PER_IP, CAPS.BAD_TOKEN_WINDOW_MS);
+  const g3 = await core.failGate("bad", "198.51.100.1", CAPS.BAD_TOKEN_PER_IP, CAPS.BAD_TOKEN_WINDOW_MS);
+  // In a DO each record()'s get→put runs under the input gate, so records serialize; the bug was the stale
+  // snapshot from gate time. With it, g2 would overwrite g1 and the count would be [1, 1].
+  for (const g of [g1, g2, g3]) await g.record();
+  const map = await core.storage.get("fails:bad");
+  const counts = Object.values(map).map((h) => h.length).sort();
+  assert.deepEqual(counts, [1, 2], "both failures from one IP and the one from another IP are all kept");
+});
+
+test("P3 #8-2: leftover unsalted ip: keys from #7 are swept from the registry, once", async () => {
+  const { env, regStore } = world();
+  for (let i = 0; i < 3; i++) await regStore.put(`ip:${await sha256hex(`203.0.113.${i}`)}`, [1]);
+  await create(env, { ip: "198.51.100.20" });
+  assert.equal([...regStore.m.keys()].some((k) => k.startsWith("ip:")), false);
+  assert.equal(await regStore.get("legacyIpSwept"), true);
+  assert.equal(await regStore.get("count"), 1, "sweep never touches room slots");
+});
+
+test("P3 #8-2: the sweep is batched and finishes over later creates", async () => {
+  const { regStore } = world();
+  const reg = new RegistryCore(regStore, { max: 200 });
+  for (let i = 0; i < 5; i++) await regStore.put(`ip:${i}`, [1]);
+  assert.equal(await reg.sweepLegacyIpKeys(2), 2);
+  assert.equal(await regStore.get("legacyIpSwept"), undefined, "not done yet");
+  assert.equal(await reg.sweepLegacyIpKeys(2), 2);
+  assert.equal(await reg.sweepLegacyIpKeys(2), 1);
+  assert.equal(await regStore.get("legacyIpSwept"), true);
+  assert.equal(await reg.sweepLegacyIpKeys(2), 0);
+});
+
+test("P3 #8-3: a release that keeps failing never strands the room; it is deleted once release succeeds", async () => {
+  const { env, clock, rooms, regStore } = world();
+  const a = await create(env);
+  const core = rooms.get(a.room);
+  const realRelease = core.release;
+  core.release = async () => { throw new Error("registry unavailable"); };
+  clock.t += CAPS.UNJOINED_MS;
+  for (let i = 0; i < 10; i++) {
+    assert.equal((await core.alarm()).deleted, false);
+    assert.equal(core.storage.alarmAt, clock.t + CAPS.ALARM_RETRY_MS, `alarm re-armed after failure ${i + 1}`);
+    clock.t = core.storage.alarmAt;
+  }
+  core.release = realRelease;
+  assert.equal((await core.alarm()).deleted, true);
+  assert.equal(await regStore.get("count"), 0, "slot freed");
+});
+
+test("P3 #8-4: IPv4-mapped IPv6 unwraps to its IPv4 address; ::1 and :: still bucket as IPv6", async () => {
+  assert.equal(ipBucket("::ffff:203.0.113.7"), "203.0.113.7");
+  assert.equal(ipBucket("::FFFF:203.0.113.7"), "203.0.113.7");
+  assert.equal(ipBucket("0:0:0:0:0:ffff:198.51.100.1"), "198.51.100.1");
+  assert.equal(ipBucket("::ffff:c000:201"), "192.0.2.1");
+  assert.equal(ipBucket("::1"), "0:0:0:0::/64");
+  assert.equal(ipBucket("::"), "0:0:0:0::/64");
+  assert.equal(ipBucket("fe80::ffff:1.2.3.4"), "fe80:0:0:0::/64", "only the ::ffff:0:0/96 prefix is unwrapped");
+  const { env } = world();
+  for (let i = 0; i < 5; i++) await create(env, { ip: `::ffff:203.0.113.${i + 1}` });
+  assert.equal((await exec(env, { op: "create" }, { ip: "::ffff:198.51.100.1" })).status, 200, "different mapped IPv4 callers no longer share one bucket");
+  assert.equal((await exec(env, { op: "create" }, { ip: "203.0.113.1" })).status, 200);
+  for (let i = 0; i < 3; i++) await create(env, { ip: "203.0.113.1" });
+  assert.equal((await exec(env, { op: "create" }, { ip: "::ffff:203.0.113.1" })).status, 429, "mapped and plain forms are one caller");
+});
+
+test("P3 #8-5: a room created before #8 (no meta.salt) gets its own salt; the public room id is never the salt", async () => {
+  const { env, rooms } = world();
+  const c = await create(env);
+  const core = rooms.get(c.room);
+  const meta = await core.storage.get("meta");
+  delete meta.salt;
+  await core.storage.put("meta", meta);
+  await exec(env, { room: c.room, op: "look" }, { bearer: "y".repeat(43), ip: "203.0.113.9" });
+  const after = await core.storage.get("meta");
+  assert.match(after.salt, /^[A-Za-z0-9_-]{43}$/);
+  assert.notEqual(after.salt, c.room);
+  const keys = Object.keys(await core.storage.get("fails:bad"));
+  assert.deepEqual(keys, [await ipKey(after.salt, "203.0.113.9")]);
+  assert.equal(keys.includes(await ipKey(c.room, "203.0.113.9")), false);
+  assert.equal((await exec(env, { room: c.room, op: "look" }, { bearer: c.watchmanToken })).status, 200, "holders unaffected");
 });

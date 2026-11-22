@@ -20,6 +20,8 @@ export const CAPS = Object.freeze({
   CREATE_ENV_WINDOW_MS: 60 * 60 * 1000,
   BAD_TOKEN_PER_IP: 30, // failed execute (unknown/revoked token) per IP per room per window
   BAD_TOKEN_WINDOW_MS: 10 * 60 * 1000,
+  LEGACY_SWEEP_BATCH: 128, // #7 `ip:` keys deleted per create until none are left (DO delete takes ≤128 keys)
+  ALARM_RETRY_MS: 5 * 60 * 1000, // re-arm the TTL alarm this far ahead when the slot release fails
 });
 
 // Salted, truncated IP keys: raw IPs are never stored, and a stored key cannot be reversed by hashing
@@ -29,14 +31,29 @@ export async function ipKey(salt, ip) {
 }
 // IPv6 clients (and egress pools) rotate within their /64; one /64 is one caller for rate limits.
 // Found live on nehemiahs-wall-dev 2026-11-21: per-address IPv6 keys let creates spread across addresses.
+// IPv4-mapped IPv6 (::ffff:a.b.c.d, or its hex form ::ffff:c000:201) is an IPv4 caller: unwrap it to the
+// dotted IPv4 address, or every mapped caller would collapse into the single 0:0:0:0::/64 bucket.
 export function ipBucket(ip) {
-  const s = String(ip ?? "unknown").trim().toLowerCase();
+  const s = unmapIPv4(String(ip ?? "unknown").trim().toLowerCase());
   if (!s.includes(":")) return s;
   const [head, tail = ""] = s.split("::");
   const h = head ? head.split(":") : [];
   const t = tail ? tail.split(":") : [];
   const full = s.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
   return full.slice(0, 4).map((x) => (x || "0").replace(/^0+(?=.)/, "")).join(":") + "::/64";
+}
+export function unmapIPv4(s) {
+  const m = /^(.*:)ffff:([0-9a-f.]+(?::[0-9a-f]{1,4})?)$/.exec(s);
+  if (!m) return s;
+  const [, prefix, tail] = m;
+  const zeros = prefix.split(":").filter(Boolean);
+  if (zeros.some((g) => !/^0{1,4}$/.test(g))) return s; // must be ::ffff: / 0:0:0:0:0:ffff:
+  if (prefix.includes("::") ? zeros.length > 4 : zeros.length !== 5) return s;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(tail)) return tail;
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(tail);
+  if (!hex) return s;
+  const a = parseInt(hex[1], 16), b = parseInt(hex[2], 16);
+  return [a >> 8, a & 255, b >> 8, b & 255].join(".");
 }
 // A map of key → hit list, pruned of keys with no live hits (bounded by the window's own caps).
 export function pruneHits(map = {}, now, windowMs) {
@@ -90,8 +107,18 @@ export class RegistryCore {
     if (!salt) await this.storage.put("salt", (salt = mintToken(this.rand)));
     return salt;
   }
+  // One-off sweep of the unsalted `ip:<sha256(ip)>` keys that #7 wrote. This code never reads them, so
+  // without the sweep they would sit in the registry forever. Bounded per call; done once, then flagged.
+  async sweepLegacyIpKeys(limit = CAPS.LEGACY_SWEEP_BATCH) {
+    if (await this.storage.get("legacyIpSwept")) return 0;
+    const old = [...(await this.storage.list({ prefix: "ip:", limit })).keys()];
+    if (old.length) await this.storage.delete(old);
+    if (old.length < limit) await this.storage.put("legacyIpSwept", true);
+    return old.length;
+  }
   // ip is the caller IP; only a salted, truncated hash is stored, in one map pruned on every create.
   async create(ip) {
+    await this.sweepLegacyIpKeys();
     const now = this.now();
     const key = await ipKey(await this.salt(), ip);
     const ips = pruneHits(await this.storage.get("ips"), now, CAPS.CREATE_IP_WINDOW_MS);
@@ -165,15 +192,23 @@ export class RoomCore {
     const meta = await this.storage.get("meta");
     if (!meta) return { ok: true, record: async () => {} };
     const now = this.now();
-    const k = await ipKey(meta.salt ?? meta.id, ip);
-    const map = pruneHits(await this.storage.get(`fails:${kind}`), now, windowMs);
-    const live = map[k] ?? [];
+    // Rooms created before #8 have no meta.salt. Their public room id must not be the salt, so mint one now.
+    if (!meta.salt) {
+      meta.salt = mintToken(this.rand);
+      await this.storage.put("meta", meta);
+    }
+    const k = await ipKey(meta.salt, ip);
+    const live = pruneHits(await this.storage.get(`fails:${kind}`), now, windowMs)[k] ?? [];
     if (live.length >= max) return fail("rate_limited", { retryAfter: Math.max(1, Math.ceil((live[0] + windowMs - now) / 1000)) });
     return {
       ok: true,
+      // Re-read the map here, not the snapshot taken above: verify() awaits in between, and a stale
+      // snapshot would drop failures that parallel requests recorded meanwhile.
       record: async () => {
-        map[k] = [...live, now];
-        await this.storage.put(`fails:${kind}`, map);
+        const at = this.now();
+        const cur = pruneHits(await this.storage.get(`fails:${kind}`), at, windowMs);
+        cur[k] = [...(cur[k] ?? []), at];
+        await this.storage.put(`fails:${kind}`, cur);
       },
     };
   }
@@ -247,9 +282,17 @@ export class RoomCore {
     const now = this.now();
     const expired = (!meta.joined && now - meta.createdAt >= CAPS.UNJOINED_MS) || now - meta.lastActive >= CAPS.ROOM_IDLE_MS;
     if (expired) {
-      // Release the registry slot FIRST. If release throws, nothing is deleted and the DO alarm retries;
-      // release is idempotent, so a retry after a successful release just deletes the room.
-      await this.release(meta.id);
+      // Release the registry slot FIRST. If release throws, nothing is deleted and we re-arm the alarm
+      // ourselves: Cloudflare's own alarm retries are bounded, and once they ran out nothing would ever
+      // fire again, stranding the room and its slot. release is idempotent, so a later retry after a
+      // successful release just deletes the room.
+      try {
+        await this.release(meta.id);
+      } catch {
+        const retryAt = now + CAPS.ALARM_RETRY_MS;
+        await this.storage.setAlarm(retryAt);
+        return { deleted: false, retryAt };
+      }
       await this.storage.deleteAll();
       return { deleted: true };
     }
